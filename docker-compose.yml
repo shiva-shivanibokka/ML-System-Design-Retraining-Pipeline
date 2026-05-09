@@ -1,0 +1,106 @@
+version: "3.9"
+
+# =============================================================================
+# ML System Design: Automated Retraining Pipeline
+# Services: MLflow + Prefect Server + Streamlit dashboard
+# =============================================================================
+# Quick start:
+#   docker-compose up --build
+#
+# Then:
+#   python data/generate_dataset.py        # generate synthetic data
+#   python pipelines/flows.py --flow full  # run full pipeline locally
+#   open http://localhost:8501             # Streamlit dashboard
+#   open http://localhost:5000             # MLflow UI
+#   open http://localhost:4200             # Prefect UI
+
+networks:
+  pipeline-net:
+    driver: bridge
+
+volumes:
+  mlflow-data:
+  prefect-data:
+
+services:
+
+  # ── MLflow Tracking Server ─────────────────────────────────────────────────
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v2.13.0
+    container_name: retraining_mlflow
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    command: >
+      mlflow server
+      --host 0.0.0.0
+      --port 5000
+      --backend-store-uri sqlite:///mlflow/mlflow.db
+      --default-artifact-root /mlflow/artifacts
+    volumes:
+      - mlflow-data:/mlflow
+    networks:
+      - pipeline-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  # ── Prefect Server ─────────────────────────────────────────────────────────
+  prefect:
+    image: prefecthq/prefect:2-python3.11
+    container_name: retraining_prefect
+    restart: unless-stopped
+    ports:
+      - "4200:4200"
+    command: prefect server start --host 0.0.0.0 --port 4200
+    volumes:
+      - prefect-data:/root/.prefect
+    networks:
+      - pipeline-net
+    environment:
+      PREFECT_API_DATABASE_CONNECTION_URL: "sqlite+aiosqlite:////root/.prefect/prefect.db"
+
+  # ── Pipeline Worker ────────────────────────────────────────────────────────
+  pipeline:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: retraining_pipeline
+    restart: "no"
+    command: python data/generate_dataset.py --mode all
+    environment:
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      PREFECT_API_URL: http://prefect:4200/api
+      PYTHONPATH: /app
+    volumes:
+      - ./data:/app/data
+      - ./reports:/app/reports
+      - ./models:/app/models
+    depends_on:
+      mlflow:
+        condition: service_healthy
+    networks:
+      - pipeline-net
+
+  # ── Streamlit Dashboard ────────────────────────────────────────────────────
+  streamlit:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: retraining_streamlit
+    restart: unless-stopped
+    command: streamlit run streamlit_app/app.py --server.port 8501 --server.address 0.0.0.0
+    ports:
+      - "8501:8501"
+    environment:
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      PYTHONPATH: /app
+    volumes:
+      - ./data:/app/data
+      - ./reports:/app/reports
+    depends_on:
+      - mlflow
+    networks:
+      - pipeline-net

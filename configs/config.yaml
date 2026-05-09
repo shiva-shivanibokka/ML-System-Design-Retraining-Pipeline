@@ -1,0 +1,255 @@
+# =============================================================================
+# ML System Design: Automated Retraining Pipeline — Master Configuration
+# =============================================================================
+# Credit risk model lifecycle: ingest → validate → detect drift →
+# retrain with HPO → validate slices → bootstrap CI → promote/reject → alert
+
+# -----------------------------------------------------------------------------
+# Dataset / Domain
+# -----------------------------------------------------------------------------
+dataset:
+  name: "credit_risk"
+  description: "Synthetic credit risk dataset — loan default prediction (binary)"
+  target_column: "default"
+  positive_label: 1                    # 1 = defaulted, 0 = paid
+  n_initial_rows: 5000                 # rows in the baseline training set
+  n_daily_rows: 500                    # rows appended per simulated daily batch
+  raw_dir: "data/raw"
+  processed_dir: "data/processed"
+  reference_dir: "data/reference"      # first production batch — drift baseline
+
+  feature_columns:
+    numeric:
+      - age
+      - annual_income
+      - loan_amount
+      - loan_term_months
+      - credit_score
+      - debt_to_income
+      - num_open_accounts
+      - num_derogatory_marks
+      - employment_years
+      - monthly_expenses
+    categorical:
+      - loan_purpose        # "home", "car", "personal", "business", "education"
+      - employment_status   # "employed", "self_employed", "unemployed", "retired"
+      - home_ownership      # "own", "mortgage", "rent"
+      - credit_grade        # "A", "B", "C", "D", "E"
+
+  # Cohort slices for slice-based validation (Uber / Netflix pattern)
+  validation_slices:
+    income_bracket:
+      column: annual_income
+      bins: [0, 40000, 80000, 120000, 999999]
+      labels: ["low", "medium", "high", "very_high"]
+    credit_grade:
+      column: credit_grade
+      values: ["A", "B", "C", "D", "E"]
+    loan_purpose:
+      column: loan_purpose
+      values: ["home", "car", "personal", "business", "education"]
+    age_group:
+      column: age
+      bins: [18, 30, 45, 60, 100]
+      labels: ["young", "middle", "senior", "elderly"]
+
+# -----------------------------------------------------------------------------
+# Data Quality Gates (Great Expectations)
+# -----------------------------------------------------------------------------
+data_quality:
+  max_null_rate: 0.05            # abort pipeline if any column > 5% null
+  min_row_count: 200             # abort if batch < 200 rows
+  max_row_count: 50000           # abort if batch suspiciously large (data dump)
+  expected_columns_must_exist: true
+  numeric_range_checks:
+    age:              [18, 100]
+    credit_score:     [300, 850]
+    debt_to_income:   [0.0, 5.0]
+    loan_term_months: [6, 360]
+    annual_income:    [0, 1000000]
+  categorical_value_checks:
+    credit_grade:       ["A", "B", "C", "D", "E"]
+    employment_status:  ["employed", "self_employed", "unemployed", "retired"]
+    home_ownership:     ["own", "mortgage", "rent"]
+    loan_purpose:       ["home", "car", "personal", "business", "education"]
+
+# -----------------------------------------------------------------------------
+# Drift Detection
+# -----------------------------------------------------------------------------
+drift:
+  # KS test (scipy) — per numeric feature
+  ks_test:
+    significance_level: 0.05          # p-value threshold — below = drift
+    min_drifted_features_to_trigger: 2 # require N features to drift before triggering retrain
+
+  # PSI — per numeric feature (Population Stability Index)
+  psi:
+    n_bins: 10
+    warning_threshold: 0.1            # PSI > 0.1 = moderate drift, log warning
+    critical_threshold: 0.2           # PSI > 0.2 = significant drift, trigger retrain
+
+  # Prediction drift — on model output scores
+  prediction_drift:
+    psi_threshold: 0.15               # PSI on score distribution
+    enabled: true
+
+  # Evidently full report
+  evidently:
+    generate_html_report: true
+    report_output_dir: "reports/evidently"
+    log_to_mlflow: true               # attach HTML as MLflow artifact
+
+  # Overall trigger logic: retrain if ANY of these are true
+  trigger_logic: "any"               # "any" | "all"
+
+# -----------------------------------------------------------------------------
+# Training
+# -----------------------------------------------------------------------------
+training:
+  model: "lightgbm"
+  task: "binary"
+  eval_metric: "auc"                 # primary metric (ROC-AUC)
+  secondary_metrics:
+    - "ks_statistic"                 # KS statistic (standard in credit risk)
+    - "gini"                         # Gini = 2*AUC - 1 (regulatory metric)
+    - "brier_score"
+    - "average_precision"
+
+  # Training window (Airbnb / Uber pattern — parameterized, not hardcoded)
+  training_window:
+    strategy: "auto"                 # "fixed" | "auto"
+    fixed_days: 90                   # used when strategy = "fixed"
+    auto_min_rows: 2000              # auto: grow window until this many rows
+    auto_max_days: 180               # auto: never use more than 180 days
+
+  test_split: 0.20
+  val_split: 0.10
+  random_state: 42
+
+  # Optuna HPO
+  optuna:
+    n_trials: 30
+    timeout_seconds: 300             # max HPO time regardless of trials
+    direction: "maximize"
+    metric: "auc"
+    sampler: "tpe"                   # Tree-structured Parzen Estimator
+    pruner: "median"                 # prune poor trials early
+    search_space:
+      num_leaves:          [20, 150]
+      max_depth:           [-1, 15]
+      learning_rate:       [0.01, 0.3]
+      n_estimators:        [100, 1000]
+      min_child_samples:   [5, 50]
+      subsample:           [0.6, 1.0]
+      colsample_bytree:    [0.6, 1.0]
+      reg_alpha:           [0.0, 1.0]
+      reg_lambda:          [0.0, 1.0]
+      class_weight:        ["balanced", null]
+
+  # SHAP feature importance
+  shap:
+    enabled: true
+    max_display: 20                  # top N features in SHAP summary plot
+    log_to_mlflow: true
+
+# -----------------------------------------------------------------------------
+# Model Validation Gate
+# -----------------------------------------------------------------------------
+validation:
+  # Bootstrap CI — must beat champion at 95% confidence (Netflix pattern)
+  bootstrap:
+    n_bootstrap_samples: 1000
+    confidence_level: 0.95
+    min_improvement: 0.005           # challenger must be > 0.5% AUC better
+    metric: "auc"
+
+  # Slice-based validation — challenger must not degrade any cohort (Uber pattern)
+  slice_validation:
+    enabled: true
+    max_degradation_per_slice: 0.02  # reject if any slice degrades > 2% AUC
+    min_slice_size: 50               # skip slice check if < 50 samples
+
+  # Overall gate: challenger must pass ALL of these
+  # 1. Bootstrap CI shows improvement at confidence_level
+  # 2. No slice degrades by more than max_degradation_per_slice
+  # 3. Challenger AUC > champion AUC + min_improvement (hard floor)
+  require_all_gates: true
+
+# -----------------------------------------------------------------------------
+# Model Card (Google Model Cards paper, 2019)
+# -----------------------------------------------------------------------------
+model_card:
+  enabled: true
+  output_dir: "reports"
+  fields:
+    - training_data_window
+    - n_training_rows
+    - feature_importance_top10       # SHAP values
+    - overall_metrics                # AUC, KS, Gini, Brier
+    - slice_metrics                  # per-cohort AUC
+    - champion_vs_challenger         # side-by-side comparison
+    - data_quality_summary
+    - drift_scores_at_trigger
+    - hyperparameters
+    - promotion_decision
+    - promotion_reason
+
+# -----------------------------------------------------------------------------
+# MLflow
+# -----------------------------------------------------------------------------
+mlflow:
+  tracking_uri: "http://mlflow:5000"
+  tracking_uri_local: "http://localhost:5000"
+  experiment_name: "credit_risk_retraining"
+  model_name: "credit_risk_lgbm"
+  registered_model_stages:
+    champion: "Production"
+    challenger: "Staging"
+    archived: "Archived"
+  log_artifacts:
+    - "shap_summary_plot"
+    - "evidently_drift_report"
+    - "model_card"
+    - "slice_metrics"
+    - "bootstrap_ci_plot"
+    - "optuna_study"
+
+# -----------------------------------------------------------------------------
+# Alerting (Slack)
+# -----------------------------------------------------------------------------
+alerting:
+  slack:
+    enabled: true                    # set false if SLACK_WEBHOOK_URL not set
+    webhook_env_var: "SLACK_WEBHOOK_URL"
+    channel: "#ml-retraining"
+    username: "MLOps Bot"
+    events:
+      drift_detected: true
+      data_quality_failure: true
+      retrain_started: true
+      retrain_complete: true
+      model_promoted: true
+      model_rejected: true
+      pipeline_error: true
+
+# -----------------------------------------------------------------------------
+# Prefect Orchestration
+# -----------------------------------------------------------------------------
+prefect:
+  work_pool: "default-agent-pool"
+  schedules:
+    ingest_and_validate:
+      cron: "0 2 * * *"             # daily at 2am
+    drift_detection:
+      cron: "0 3 * * *"             # daily at 3am (after ingestion)
+  flow_run_timeout_seconds: 3600    # 1 hour max per flow
+  retries: 2
+  retry_delay_seconds: 60
+
+# -----------------------------------------------------------------------------
+# Streamlit Dashboard
+# -----------------------------------------------------------------------------
+streamlit:
+  mlflow_uri: "http://localhost:5000"
+  refresh_interval_seconds: 30
+  max_runs_to_display: 50
