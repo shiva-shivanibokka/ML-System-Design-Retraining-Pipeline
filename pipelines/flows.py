@@ -68,7 +68,7 @@ def _load_reference_data() -> pd.DataFrame:
     if not ref_path.exists():
         raise FileNotFoundError(
             f"Reference data not found at {ref_path}. "
-            "Run: python data/generate_dataset.py --mode initial"
+            "Run: dvc pull  (or build datasets via data/build_batches.py)"
         )
     return pd.read_parquet(ref_path)
 
@@ -83,7 +83,7 @@ def _load_all_processed_data() -> pd.DataFrame:
         files = sorted(raw_dir.glob("*.parquet"))
     if not files:
         raise FileNotFoundError(
-            "No processed data found. Run generate_dataset.py first."
+            "No processed data found. Run: dvc pull  (or build datasets via data/build_batches.py)."
         )
     return pd.concat([pd.read_parquet(f) for f in files], ignore_index=True)
 
@@ -560,16 +560,10 @@ if __name__ == "__main__":
         flow_retrain_validate_promote()
 
     elif args.flow == "full":
-        # Simulate full day: ingest → detect drift → (maybe retrain)
-        from data.generate_dataset import generate_batch, save_daily_batches
-
-        print("Generating a drifted batch for demonstration...")
-        df = generate_batch(
-            n=500, drift_mode="covariate", drift_intensity=1.0, seed=999
-        )
-        batch_date = datetime.utcnow().date().isoformat()
-        tmp_path = f"/tmp/demo_batch_{batch_date}.parquet"
-        df.to_parquet(tmp_path, index=False)
-
-        flow_ingest_and_validate(batch_path=tmp_path, batch_date=batch_date)
+        processed = sorted(Path(settings.dataset.processed_dir).glob("batch_*.parquet"))
+        if not processed:
+            raise SystemExit("No batches found. Run: dvc pull  (or build them via data/build_batches.py)")
+        latest = processed[-1]
+        batch_date = latest.stem.replace("batch_", "")
+        flow_ingest_and_validate(batch_path=str(latest), batch_date=batch_date)
         flow_detect_drift(batch_date=batch_date, force_retrain=args.force_retrain)
