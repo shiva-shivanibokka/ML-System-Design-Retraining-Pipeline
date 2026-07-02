@@ -60,6 +60,7 @@ MODEL CARD (Google Model Cards paper, 2019)
 from __future__ import annotations
 
 import json
+import logging
 import warnings
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
@@ -74,6 +75,8 @@ import mlflow
 
 from configs.settings import settings
 from training.trainer import compute_metrics, prepare_features, TrainingResult
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -172,7 +175,8 @@ class ModelValidator:
 
         Args:
             challenger_result: output from CreditRiskTrainer.train()
-            champion_model: fitted LightGBM Booster currently in Production
+            champion_model: ChampionBundle currently in Production (carries
+                its own booster, its own label encoders, and a .predict())
             test_df: holdout test set (same for both champion and challenger)
             champion_run_id: MLflow run ID of the champion model
             drift_report_dict: drift report that triggered this retrain
@@ -182,24 +186,36 @@ class ModelValidator:
             ValidationDecision with promoted=True/False and full reasoning
         """
         target = self.dataset_cfg.target_column
+        y_test = test_df[target].values.astype(int)
 
-        # Prepare features for both models
-        X_test, _ = prepare_features(
+        # Challenger side: encode with the challenger's own encoders.
+        X_test_chall, _ = prepare_features(
             test_df,
             label_encoders=challenger_result.label_encoders,
             fit_encoders=False,
         )
-        y_test = test_df[target].values.astype(int)
+        challenger_probs = challenger_result.model.predict(X_test_chall)
 
-        # Get predictions from both models
-        challenger_probs = challenger_result.model.predict(X_test)
+        # Champion side: encode with the CHAMPION's own encoders — the
+        # champion was trained with a (potentially) different label-encoder
+        # vocabulary than the challenger, so reusing X_test_chall here would
+        # silently score the champion on mis-encoded integers.
+        champion_probs = None
         if champion_model is not None:
+            champ_encoders = getattr(champion_model, "encoders", None)
+            if champ_encoders:
+                X_test_champ, _ = prepare_features(
+                    test_df, label_encoders=champ_encoders, fit_encoders=False
+                )
+            else:
+                # No encoders artifact (legacy champion) — fall back but log loudly.
+                logger.warning("Champion has no encoders; scoring may be approximate.")
+                X_test_champ = X_test_chall
             try:
-                champion_probs = champion_model.predict(X_test)
-            except Exception:
+                champion_probs = champion_model.predict(X_test_champ)
+            except Exception as e:
+                logger.error("Champion scoring failed: %s", e)
                 champion_probs = None
-        else:
-            champion_probs = None
 
         challenger_auc = roc_auc_score(y_test, challenger_probs)
         champion_auc = (
@@ -217,8 +233,11 @@ class ModelValidator:
             auc_delta=round(challenger_auc - champion_auc, 4),
         )
 
-        # If no champion exists — auto-promote first model
-        if champion_model is None:
+        # If no champion exists, or champion scoring failed/produced no
+        # probs — auto-promote (first model / no valid baseline to compare
+        # against). This guarantees the bootstrap/slice gates below (which
+        # index champion_probs) are never reached with champion_probs=None.
+        if champion_model is None or champion_probs is None:
             decision.promoted = True
             decision.bootstrap_gate_passed = True
             decision.slice_gate_passed = True
