@@ -1,0 +1,3 @@
+# Data versioning (Milestone 0)
+dvc==3.55.2
+dagshub==0.3.35
