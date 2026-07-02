@@ -348,28 +348,40 @@ class CreditRiskTrainer:
             mlflow.log_param("training_window_days", window_days)
             mlflow.log_param("n_training_rows", len(train_df))
 
-            # 2. Feature preparation
+            # 2. Train/val/test split — split RAW rows FIRST so encoders never
+            # see val/test categories (avoids category leakage).
             target = self.dataset_cfg.target_column
-            X, label_encoders = prepare_features(train_df, fit_encoders=True)
-            y = train_df[target].values.astype(int)
-            feature_names = X.columns.tolist()
-
-            # 3. Train/val/test split
-            X_trainval, X_test, y_trainval, y_test = train_test_split(
-                X,
-                y,
+            trainval_df, test_df = train_test_split(
+                train_df,
                 test_size=self.cfg.test_split,
                 random_state=self.cfg.random_state,
-                stratify=y,
+                stratify=train_df[target],
             )
             val_frac = self.cfg.val_split / (1 - self.cfg.test_split)
-            X_train, X_val, y_train, y_val = train_test_split(
-                X_trainval,
-                y_trainval,
+            train_split_df, val_df = train_test_split(
+                trainval_df,
                 test_size=val_frac,
                 random_state=self.cfg.random_state,
-                stratify=y_trainval,
+                stratify=trainval_df[target],
             )
+
+            y_train = train_split_df[target].values.astype(int)
+            y_val = val_df[target].values.astype(int)
+            y_test = test_df[target].values.astype(int)
+
+            # 3. Feature preparation — fit encoders on train only, then apply
+            # the fitted encoders (never refit) to val/test.
+            X_train, label_encoders = prepare_features(
+                train_split_df, fit_encoders=True
+            )
+            X_val, _ = prepare_features(
+                val_df, label_encoders=label_encoders, fit_encoders=False
+            )
+            X_test, _ = prepare_features(
+                test_df, label_encoders=label_encoders, fit_encoders=False
+            )
+            feature_names = X_train.columns.tolist()
+
             mlflow.log_params(
                 {
                     "n_train": len(X_train),
@@ -412,6 +424,14 @@ class CreditRiskTrainer:
                 artifact_path="model",
                 registered_model_name=None,  # registry handled separately
             )
+
+            # Persist label encoders so serving + the validator can reproduce encoding.
+            import joblib
+            from configs.paths import temp_file
+
+            enc_path = temp_file(prefix=f"encoders_{run_id[:8]}_", suffix=".joblib")
+            joblib.dump(label_encoders, enc_path)
+            mlflow.log_artifact(str(enc_path), artifact_path="encoders")
 
             duration = time.perf_counter() - t_start
             mlflow.log_metric("training_duration_seconds", duration)
