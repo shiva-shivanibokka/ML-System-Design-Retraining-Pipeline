@@ -158,6 +158,7 @@ class DriftDetector:
 
     def __init__(self) -> None:
         self.cfg = settings.drift
+        self.trigger_logic = self.cfg.trigger_logic
         self.dataset_cfg = settings.dataset
         self._numeric_features = self.dataset_cfg.feature_columns["numeric"]
 
@@ -380,41 +381,44 @@ class DriftDetector:
         Updates report.retrain_triggered and report.trigger_reasons in-place.
         """
         reasons = []
-        signals = []
 
         # KS signal
         ks_threshold = self.cfg.ks_test.min_drifted_features_to_trigger
-        if report.n_features_ks_drifted >= ks_threshold:
+        ks_sig = report.n_features_ks_drifted >= ks_threshold
+        if ks_sig:
             reasons.append(
                 f"KS drift in {report.n_features_ks_drifted} features "
                 f"(threshold: {ks_threshold})"
             )
-            signals.append(True)
-        else:
-            signals.append(False)
 
         # PSI signal
-        if report.n_features_psi_drifted > 0:
+        psi_sig = report.n_features_psi_drifted > 0
+        if psi_sig:
             drifted_feats = [r.feature for r in report.feature_results if r.psi_drifted]
             reasons.append(f"PSI critical in: {drifted_feats}")
-            signals.append(True)
-        else:
-            signals.append(False)
 
-        # Prediction drift signal
-        if report.prediction_drift is not None and report.prediction_drift.psi_drifted:
+        # Prediction drift signal (None when not computed — excluded from decision)
+        pred_sig = (
+            None
+            if report.prediction_drift is None
+            else report.prediction_drift.psi_drifted
+        )
+        if pred_sig:
             reasons.append(
                 f"Prediction score PSI {report.prediction_drift.psi_score:.3f} "
                 f"exceeds {self.cfg.prediction_drift.psi_threshold}"
             )
-            signals.append(True)
-        else:
-            signals.append(False)
 
-        # Apply trigger logic
-        if self.cfg.trigger_logic == "any":
-            report.retrain_triggered = any(signals)
-        else:  # "all"
-            report.retrain_triggered = all(s for s in signals if s is not None)
+        # Apply trigger logic — combine only the signals that were actually computed
+        report.retrain_triggered = self._decide_trigger(ks_sig, psi_sig, pred_sig)
 
         report.trigger_reasons = reasons
+
+    def _decide_trigger(self, ks_triggered, psi_triggered, pred_triggered) -> bool:
+        """Combine only the signals that were actually computed (None = not computed)."""
+        present = [s for s in (ks_triggered, psi_triggered, pred_triggered) if s is not None]
+        if not present:
+            return False
+        if self.trigger_logic == "any":
+            return any(present)
+        return all(present)  # "all"
