@@ -156,6 +156,7 @@ class MLflowConfig:
     experiment_name: str
     model_name: str
     registered_model_stages: Dict
+    registered_model_aliases: Dict
     log_artifacts: List[str]
 
 
@@ -278,6 +279,7 @@ def _load() -> Settings:
             experiment_name=ml["experiment_name"],
             model_name=ml["model_name"],
             registered_model_stages=ml["registered_model_stages"],
+            registered_model_aliases=ml["registered_model_aliases"],
             log_artifacts=ml["log_artifacts"],
         ),
         alerting=AlertingConfig(

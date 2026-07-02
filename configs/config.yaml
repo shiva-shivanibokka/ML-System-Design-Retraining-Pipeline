@@ -209,6 +209,11 @@ mlflow:
     champion: "Production"
     challenger: "Staging"
     archived: "Archived"
+  # Modern MLflow alias API (stages removed in MLflow 3). Champion = version
+  # carrying the `champion` alias; archived versions get `archived-<version>`.
+  registered_model_aliases:
+    champion: champion
+    archived_prefix: archived   # archived-<version>
   log_artifacts:
     - "shap_summary_plot"
     - "evidently_drift_report"

@@ -1,35 +1,40 @@
 """
 MLflow Model Registry — Champion/Challenger Promotion & Archival.
 
-Implements the champion/challenger pattern used at every mature ML team:
-  - CHALLENGER: newly trained model in MLflow Staging
-  - CHAMPION:   currently live model in MLflow Production
-  - ARCHIVED:   all previously promoted models (rollback source)
+Implements the champion/challenger pattern used at every mature ML team,
+built on MLflow's modern **alias** API (stages were removed in MLflow 3):
+  - CHALLENGER: newly trained, registered version with no champion alias
+  - CHAMPION:   the version carrying the `champion` alias (currently live)
+  - ARCHIVED:   previously promoted versions carrying an `archived-<version>`
+                alias (rollback source)
 
 Promotion flow (happy path):
-  1. Challenger registered in Staging after training
-  2. Validation gates pass → transition Staging → Production
-  3. Previous Production model → Archived
-  4. Slack alert: "Model v5 promoted. Champion AUC: 0.8341 (+0.0089)"
+  1. Challenger registered after training (no alias yet)
+  2. Validation gates pass → previous champion gets `archived-<old>`, new
+     version gets the `champion` alias
+  3. Slack alert: "Model v5 promoted. Champion AUC: 0.8341 (+0.0089)"
 
 Rejection flow:
-  1. Challenger registered in Staging after training
-  2. Validation gates fail → model stays in Staging (never touches Production)
+  1. Challenger registered after training
+  2. Validation gates fail → model stays un-aliased (never becomes champion)
   3. Slack alert: "Model v5 rejected. Reason: slice degradation on income_bracket=low"
 
 Rollback:
-  The most recent Archived model can be re-promoted to Production in
-  one API call. This is the emergency rollback used when a promoted
+  The most recent `archived-*` version can be re-pointed to the `champion`
+  alias in one API call. This is the emergency rollback used when a promoted
   model shows unexpected behavior on live traffic.
 """
 
 from __future__ import annotations
 
+import logging
+import os
 import warnings
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Optional
 
+import joblib
 import mlflow
 import mlflow.lightgbm
 from mlflow import MlflowClient
@@ -38,6 +43,8 @@ from mlflow.entities.model_registry import ModelVersion
 from configs.settings import settings
 from training.trainer import TrainingResult
 from validation.validator import ValidationDecision
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -53,15 +60,52 @@ class RegistryEntry:
     description: str
 
 
+@dataclass
+class ChampionBundle:
+    """The live champion: its booster plus the label encoders it was fit with.
+
+    Carries a ``predict`` method so callers that previously received a bare
+    LightGBM booster (drift detection, the validation gate) keep working.
+    """
+
+    booster: object
+    encoders: dict
+    version: str
+
+    def predict(self, X):
+        return self.booster.predict(X)
+
+
 class ModelRegistry:
     """
-    Wraps MLflow Model Registry with champion/challenger lifecycle logic.
+    Wraps MLflow Model Registry with champion/challenger lifecycle logic,
+    using the modern alias API (no deprecated stage transitions).
     """
 
     def __init__(self) -> None:
         self.cfg = settings.mlflow
         mlflow.set_tracking_uri(self.cfg.tracking_uri)
-        self.client = MlflowClient(tracking_uri=self.cfg.tracking_uri)
+        self._client = MlflowClient(tracking_uri=self.cfg.tracking_uri)
+
+    # -----------------------------------------------------------------------
+    # Alias helpers
+    # -----------------------------------------------------------------------
+
+    def _set_champion_alias(self, version: str) -> None:
+        """Point the `champion` alias at the given version."""
+        self._client.set_registered_model_alias(
+            name=self.cfg.model_name,
+            alias=self.cfg.registered_model_aliases["champion"],
+            version=str(version),
+        )
+
+    def _archive_alias(self, version: str) -> None:
+        """Give a version an `archived-<version>` alias (rollback source)."""
+        self._client.set_registered_model_alias(
+            name=self.cfg.model_name,
+            alias=f'{self.cfg.registered_model_aliases["archived_prefix"]}-{version}',
+            version=str(version),
+        )
 
     # -----------------------------------------------------------------------
     # Register challenger
@@ -69,8 +113,11 @@ class ModelRegistry:
 
     def register_challenger(self, result: TrainingResult) -> ModelVersion:
         """
-        Register the newly trained model as a Staging version.
-        Called after training completes, before validation gates run.
+        Register the newly trained model as a new registry version.
+
+        No alias is set here — a freshly registered version that does not yet
+        carry the `champion` alias *is* the challenger. Called after training
+        completes, before validation gates run.
         """
         model_uri = f"runs:/{result.run_id}/model"
 
@@ -89,7 +136,7 @@ class ModelRegistry:
             )
 
             # Set description
-            self.client.update_model_version(
+            self._client.update_model_version(
                 name=self.cfg.model_name,
                 version=mv.version,
                 description=(
@@ -101,16 +148,9 @@ class ModelRegistry:
                 ),
             )
 
-            # Move to Staging
-            self.client.transition_model_version_stage(
-                name=self.cfg.model_name,
-                version=mv.version,
-                stage=self.cfg.registered_model_stages["challenger"],
-                archive_existing_versions=False,
-            )
-
             print(
-                f"Challenger registered: {self.cfg.model_name} v{mv.version} → Staging"
+                f"Challenger registered: {self.cfg.model_name} v{mv.version} "
+                f"(awaiting validation)"
             )
             return mv
 
@@ -127,34 +167,28 @@ class ModelRegistry:
         decision: ValidationDecision,
     ) -> bool:
         """
-        Promote challenger to Production and archive previous champion.
+        Promote challenger to champion and archive the previous champion.
         Returns True if promotion succeeded.
         """
         try:
-            # Archive current Production model (if any)
+            # Archive current champion (if any), then release the champion alias
             current_champion = self._get_champion()
             if current_champion is not None:
-                self.client.transition_model_version_stage(
+                self._archive_alias(current_champion.version)
+                self._client.delete_registered_model_alias(
                     name=self.cfg.model_name,
-                    version=current_champion.version,
-                    stage=self.cfg.registered_model_stages["archived"],
-                    archive_existing_versions=False,
+                    alias=self.cfg.registered_model_aliases["champion"],
                 )
                 print(
                     f"Archived previous champion: "
                     f"{self.cfg.model_name} v{current_champion.version}"
                 )
 
-            # Promote challenger to Production
-            self.client.transition_model_version_stage(
-                name=self.cfg.model_name,
-                version=challenger_version.version,
-                stage=self.cfg.registered_model_stages["champion"],
-                archive_existing_versions=False,
-            )
+            # Promote challenger by pointing the champion alias at it
+            self._set_champion_alias(challenger_version.version)
 
             # Update description
-            self.client.update_model_version(
+            self._client.update_model_version(
                 name=self.cfg.model_name,
                 version=challenger_version.version,
                 description=(
@@ -165,7 +199,7 @@ class ModelRegistry:
             )
 
             print(
-                f"PROMOTED: {self.cfg.model_name} v{challenger_version.version} → Production | "
+                f"PROMOTED: {self.cfg.model_name} v{challenger_version.version} → champion | "
                 f"AUC={decision.challenger_auc:.4f} (+{decision.auc_delta:.4f})"
             )
             return True
@@ -180,13 +214,13 @@ class ModelRegistry:
         decision: ValidationDecision,
     ) -> None:
         """
-        Leave challenger in Staging with rejection notes.
+        Leave the challenger un-aliased with rejection notes.
         The challenger stays visible in MLflow for debugging but never
-        touches Production.
+        becomes champion.
         """
         try:
             reasons_str = " | ".join(decision.rejection_reasons[:3])
-            self.client.update_model_version(
+            self._client.update_model_version(
                 name=self.cfg.model_name,
                 version=challenger_version.version,
                 description=(
@@ -205,39 +239,74 @@ class ModelRegistry:
     # Load champion
     # -----------------------------------------------------------------------
 
-    def load_champion(self) -> Optional[object]:
+    def load_champion(self) -> Optional[ChampionBundle]:
         """
-        Load the current Production model for use in validation comparison.
-        Returns None if no Production model exists (first-ever training run).
+        Load the current champion model plus the label encoders it was fit
+        with, so callers can reproduce the champion's exact encoding.
+
+        Returns None **only** when no champion alias exists (first-ever run).
+        Re-raises when the registry is unreachable — a connectivity failure
+        must never be silently treated as "no champion".
         """
+        champion_alias = self.cfg.registered_model_aliases["champion"]
         try:
-            champion_mv = self._get_champion()
-            if champion_mv is None:
-                print("No champion model in Production — this is the first run.")
-                return None
-
-            model_uri = f"models:/{self.cfg.model_name}/Production"
-            model = mlflow.lightgbm.load_model(model_uri)
-            print(
-                f"Loaded champion: {self.cfg.model_name} v{champion_mv.version} "
-                f"from Production"
+            mv = self._client.get_model_version_by_alias(
+                self.cfg.model_name, champion_alias
             )
-            return model
-
         except Exception as e:
-            warnings.warn(f"Could not load champion model: {e}", stacklevel=2)
-            return None
+            # Distinguish "no champion" (return None) from "unreachable" (raise).
+            if "RESOURCE_DOES_NOT_EXIST" in str(e) or "not found" in str(e).lower():
+                logger.info(
+                    "No champion alias set yet for %s — first run.",
+                    self.cfg.model_name,
+                )
+                print("No champion model registered — this is the first run.")
+                return None
+            logger.error("MLflow registry unreachable while loading champion: %s", e)
+            raise
+
+        booster = mlflow.lightgbm.load_model(
+            f"models:/{self.cfg.model_name}@{champion_alias}"
+        )
+
+        encoders: dict = {}
+        try:
+            local_dir = self._client.download_artifacts(mv.run_id, "encoders")
+            enc_files = [f for f in os.listdir(local_dir) if f.endswith(".joblib")]
+            if enc_files:
+                encoders = joblib.load(os.path.join(local_dir, enc_files[0]))
+            else:
+                logger.warning(
+                    "Champion run %s has no encoders artifact", mv.run_id
+                )
+        except Exception as e:
+            logger.warning(
+                "Could not load encoders for champion run %s: %s", mv.run_id, e
+            )
+
+        print(
+            f"Loaded champion: {self.cfg.model_name} v{mv.version} "
+            f"({len(encoders)} encoders)"
+        )
+        return ChampionBundle(
+            booster=booster, encoders=encoders, version=str(mv.version)
+        )
 
     def _get_champion(self) -> Optional[ModelVersion]:
-        """Get the current Production model version."""
+        """Return the current champion model version, or None if none is set.
+
+        Raises on connectivity errors so "MLflow down" is never mistaken for
+        "no champion".
+        """
+        champion_alias = self.cfg.registered_model_aliases["champion"]
         try:
-            versions = self.client.get_latest_versions(
-                name=self.cfg.model_name,
-                stages=[self.cfg.registered_model_stages["champion"]],
+            return self._client.get_model_version_by_alias(
+                self.cfg.model_name, champion_alias
             )
-            return versions[0] if versions else None
-        except Exception:
-            return None
+        except Exception as e:
+            if "RESOURCE_DOES_NOT_EXIST" in str(e) or "not found" in str(e).lower():
+                return None
+            raise
 
     # -----------------------------------------------------------------------
     # Emergency rollback
@@ -245,47 +314,55 @@ class ModelRegistry:
 
     def rollback_to_previous(self) -> Optional[RegistryEntry]:
         """
-        Emergency rollback: re-promote most recent Archived model to Production.
-        Used when a newly promoted model shows unexpected live behavior.
+        Emergency rollback: re-point the `champion` alias at the most recent
+        `archived-*` version. Used when a newly promoted model shows
+        unexpected live behavior.
         """
+        archived_prefix = self.cfg.registered_model_aliases["archived_prefix"] + "-"
         try:
-            archived = self.client.get_latest_versions(
-                name=self.cfg.model_name,
-                stages=[self.cfg.registered_model_stages["archived"]],
+            all_versions = self._client.search_model_versions(
+                f"name='{self.cfg.model_name}'"
             )
+            archived = [
+                mv
+                for mv in all_versions
+                if any(
+                    str(a).startswith(archived_prefix)
+                    for a in (getattr(mv, "aliases", None) or [])
+                )
+            ]
             if not archived:
                 print("No archived models available for rollback.")
                 return None
 
-            # Most recently archived = version number descending
+            # Most recently archived = highest version number
             latest_archived = max(archived, key=lambda v: int(v.version))
 
-            # Archive current champion
+            # Archive the current champion (if any) before re-pointing the alias
             current = self._get_champion()
-            if current:
-                self.client.transition_model_version_stage(
-                    name=self.cfg.model_name,
-                    version=current.version,
-                    stage=self.cfg.registered_model_stages["archived"],
-                )
+            if current is not None and current.version != latest_archived.version:
+                self._archive_alias(current.version)
 
-            # Re-promote archived model
-            self.client.transition_model_version_stage(
-                name=self.cfg.model_name,
-                version=latest_archived.version,
-                stage=self.cfg.registered_model_stages["champion"],
-            )
+            # Re-promote the archived model
+            self._set_champion_alias(latest_archived.version)
+
+            # Preserve the real AUC from the version's tags when available
+            auc = 0.0
+            try:
+                auc = float((latest_archived.tags or {}).get("auc", 0.0))
+            except (TypeError, ValueError):
+                auc = 0.0
 
             print(
-                f"ROLLBACK: Restored {self.cfg.model_name} v{latest_archived.version} "
-                f"to Production"
+                f"ROLLBACK: Restored {self.cfg.model_name} "
+                f"v{latest_archived.version} to champion"
             )
             return RegistryEntry(
                 model_name=self.cfg.model_name,
                 version=latest_archived.version,
                 stage="Production",
                 run_id=latest_archived.run_id or "",
-                auc=0.0,
+                auc=auc,
                 promoted_at=datetime.now(timezone.utc).isoformat(),
                 description="Rolled back from archive",
             )
@@ -299,17 +376,28 @@ class ModelRegistry:
     # -----------------------------------------------------------------------
 
     def get_status(self) -> dict:
-        """Return current registry status for the Streamlit dashboard."""
+        """Return current registry status for the Streamlit dashboard.
+
+        Groups versions by alias into the legacy stage buckets the dashboard
+        still expects: the `champion`-aliased version → "Production", any
+        `archived-*` version → "Archived", everything else → "Staging".
+        """
+        champion_alias = self.cfg.registered_model_aliases["champion"]
+        archived_prefix = self.cfg.registered_model_aliases["archived_prefix"] + "-"
         try:
-            all_versions = self.client.search_model_versions(
+            all_versions = self._client.search_model_versions(
                 f"name='{self.cfg.model_name}'"
             )
             by_stage: dict = {}
             for mv in all_versions:
-                stage = mv.current_stage
-                if stage not in by_stage:
-                    by_stage[stage] = []
-                by_stage[stage].append(
+                aliases = [str(a) for a in (getattr(mv, "aliases", None) or [])]
+                if champion_alias in aliases:
+                    stage = "Production"
+                elif any(a.startswith(archived_prefix) for a in aliases):
+                    stage = "Archived"
+                else:
+                    stage = "Staging"
+                by_stage.setdefault(stage, []).append(
                     {
                         "version": mv.version,
                         "run_id": mv.run_id,
