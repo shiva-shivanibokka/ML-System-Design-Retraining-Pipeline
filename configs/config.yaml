@@ -20,7 +20,6 @@ dataset:
 
   feature_columns:
     numeric:
-      - age
       - annual_income
       - loan_amount
       - loan_term_months
@@ -29,29 +28,30 @@ dataset:
       - num_open_accounts
       - num_derogatory_marks
       - employment_years
-      - monthly_expenses
+      - interest_rate
+      - revolving_utilization
+      - installment
     categorical:
-      - loan_purpose        # "home", "car", "personal", "business", "education"
-      - employment_status   # "employed", "self_employed", "unemployed", "retired"
-      - home_ownership      # "own", "mortgage", "rent"
-      - credit_grade        # "A", "B", "C", "D", "E"
+      - loan_purpose
+      - home_ownership
+      - credit_grade
+      - verification_status
 
   # Cohort slices for slice-based validation (Uber / Netflix pattern)
   validation_slices:
     income_bracket:
       column: annual_income
-      bins: [0, 40000, 80000, 120000, 999999]
+      bins: [0, 40000, 80000, 120000, 100000000]
       labels: ["low", "medium", "high", "very_high"]
     credit_grade:
       column: credit_grade
-      values: ["A", "B", "C", "D", "E"]
+      values: ["A", "B", "C", "D", "E", "F", "G"]
     loan_purpose:
       column: loan_purpose
-      values: ["home", "car", "personal", "business", "education"]
-    age_group:
-      column: age
-      bins: [18, 30, 45, 60, 100]
-      labels: ["young", "middle", "senior", "elderly"]
+      values: ["debt_consolidation", "credit_card", "home_improvement", "major_purchase", "medical", "small_business", "car", "other"]
+    loan_term:
+      column: loan_term_months
+      values: [36, 60]
 
 # -----------------------------------------------------------------------------
 # Data Quality Gates (Great Expectations)
@@ -62,16 +62,19 @@ data_quality:
   max_row_count: 50000           # abort if batch suspiciously large (data dump)
   expected_columns_must_exist: true
   numeric_range_checks:
-    age:              [18, 100]
-    credit_score:     [300, 850]
-    debt_to_income:   [0.0, 5.0]
-    loan_term_months: [6, 360]
-    annual_income:    [0, 1000000]
+    credit_score:            [300, 850]
+    debt_to_income:          [0.0, 999.0]   # LC 'dti' is a percentage-scale number, not a 0-1 ratio
+    loan_term_months:        [6, 360]
+    annual_income:           [0, 100000000]
+    loan_amount:             [0, 100000]
+    interest_rate:           [0.0, 40.0]
+    revolving_utilization:   [0.0, 250.0]
+    installment:             [0, 100000]
   categorical_value_checks:
-    credit_grade:       ["A", "B", "C", "D", "E"]
-    employment_status:  ["employed", "self_employed", "unemployed", "retired"]
-    home_ownership:     ["own", "mortgage", "rent"]
-    loan_purpose:       ["home", "car", "personal", "business", "education"]
+    credit_grade:        ["A", "B", "C", "D", "E", "F", "G"]
+    home_ownership:      ["RENT", "OWN", "MORTGAGE", "OTHER", "NONE", "ANY"]
+    loan_purpose:        ["debt_consolidation", "credit_card", "home_improvement", "major_purchase", "medical", "small_business", "car", "vacation", "moving", "house", "renewable_energy", "wedding", "other", "educational"]
+    verification_status: ["Verified", "Source Verified", "Not Verified"]
 
 # -----------------------------------------------------------------------------
 # Drift Detection
