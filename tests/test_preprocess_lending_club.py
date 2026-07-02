@@ -23,6 +23,9 @@ def test_map_default():
     assert _map_default("Charged Off") == 1
     assert _map_default("Fully Paid") == 0
     assert _map_default("Current") is None
+    assert _map_default("Default") == 1
+    assert _map_default("Does not meet the credit policy. Status:Charged Off") == 1
+    assert _map_default("Does not meet the credit policy. Status:Fully Paid") == 0
 
 def test_preprocess_drops_unresolved_and_maps_schema():
     raw = pd.read_csv(FIX)
@@ -36,6 +39,18 @@ def test_preprocess_drops_unresolved_and_maps_schema():
         assert col in out.columns
     assert "annual_inc" not in out.columns
     assert str(out["issue_d"].dtype).startswith("datetime")
+
+def test_preprocess_retains_policy_exception_statuses():
+    raw = pd.read_csv(FIX)
+    out = preprocess(raw)
+    # "Default" row (dti=21.4) and "Does not meet the credit policy. Status:Charged
+    # Off" row (dti=24.9) must be retained, not dropped as unresolved.
+    assert 21.4 in out["debt_to_income"].values
+    assert 24.9 in out["debt_to_income"].values
+    default_row = out[out["debt_to_income"] == 21.4].iloc[0]
+    assert default_row["default"] == 1
+    policy_charged_off_row = out[out["debt_to_income"] == 24.9].iloc[0]
+    assert policy_charged_off_row["default"] == 1
 
 def test_load_and_preprocess_smoke():
     out = load_and_preprocess(str(FIX))

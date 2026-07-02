@@ -11,3 +11,5 @@ loan_amnt,term,int_rate,installment,grade,emp_length,home_ownership,annual_inc,v
 7000,36 months,6.99%,216.12,A,4 years,OWN,45000,Not Verified,Jan-2016,Fully Paid,vacation,12.5,4,0,25.8%,730,734
 22000,60 months,15.61%,534.67,D,6 years,MORTGAGE,95000,Source Verified,Feb-2016,Charged Off,house,23.6,11,1,70.3%,665,669
 14000,36 months,10.15%,452.89,B,8 years,RENT,68000,Verified,Mar-2016,Fully Paid,medical,16.7,8,0,48.6%,695,699
+11000,36 months,12.34%,367.21,C,5 years,RENT,58000,Verified,Apr-2016,Default,debt_consolidation,21.4,9,1,60.5%,685,689
+16000,60 months,17.05%,398.76,D,2 years,MORTGAGE,72000,Source Verified,May-2016,Does not meet the credit policy. Status:Charged Off,credit_card,24.9,13,2,80.1%,655,659

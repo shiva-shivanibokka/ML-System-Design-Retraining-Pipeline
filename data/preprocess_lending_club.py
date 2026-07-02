@@ -87,11 +87,23 @@ def _strip_pct(s) -> float:
 
 
 def _map_default(status):
-    """Charged Off -> 1, Fully Paid -> 0, anything else (e.g. Current) -> None."""
+    """Map loan_status to the binary default target.
+
+    Charged Off, Default, and the "policy exception" charged-off variant -> 1.
+    Fully Paid and the "policy exception" fully-paid variant -> 0.
+    Anything else (e.g. Current, Late, In Grace Period) -> None (row dropped).
+    """
     status = str(status).strip()
-    if status == "Charged Off":
+    if status in (
+        "Charged Off",
+        "Default",
+        "Does not meet the credit policy. Status:Charged Off",
+    ):
         return 1
-    if status == "Fully Paid":
+    if status in (
+        "Fully Paid",
+        "Does not meet the credit policy. Status:Fully Paid",
+    ):
         return 0
     return None
 
@@ -124,8 +136,11 @@ def preprocess(raw: pd.DataFrame) -> pd.DataFrame:
     }
     df = df.rename(columns=simple_renames)
 
-    # issue_d parsed as datetime (e.g. "Dec-2015").
-    df["issue_d"] = pd.to_datetime(raw["issue_d"], format="%b-%Y", errors="coerce")
+    # issue_d parsed as datetime (e.g. "Dec-2015"). Read from the already-filtered
+    # working frame (df), not the original unfiltered raw frame, so a future
+    # reset_index can't misalign it (issue_d is not renamed, so df["issue_d"]
+    # still holds the same raw strings).
+    df["issue_d"] = pd.to_datetime(df["issue_d"], format="%b-%Y", errors="coerce")
 
     out_columns = CANONICAL_COLUMNS + ["default", "issue_d"]
     out = df[out_columns].copy()
