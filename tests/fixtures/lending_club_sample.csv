@@ -1,0 +1,13 @@
+loan_amnt,term,int_rate,installment,grade,emp_length,home_ownership,annual_inc,verification_status,issue_d,loan_status,purpose,dti,open_acc,pub_rec,revol_util,fico_range_low,fico_range_high
+10000,36 months,10.99%,326.53,B,10+ years,RENT,55000,Verified,Dec-2015,Fully Paid,debt_consolidation,18.5,8,0,45.3%,690,694
+20000,60 months,13.56%,461.53,C,< 1 year,MORTGAGE,75000,Source Verified,Jan-2016,Charged Off,credit_card,22.1,12,1,72.1%,670,674
+15000,36 months,7.89%,469.12,A,n/a,OWN,90000,Not Verified,Feb-2016,Current,home_improvement,15.0,6,0,30.5%,720,724
+8000,36 months,9.44%,255.67,B,2 years,RENT,48000,Verified,Mar-2016,Fully Paid,major_purchase,20.3,9,0,55.0%,680,684
+25000,60 months,16.20%,612.34,D,5 years,MORTGAGE,100000,Source Verified,Dec-2015,Charged Off,small_business,25.7,15,2,88.9%,660,664
+12000,36 months,11.53%,395.78,B,3 years,RENT,60000,Not Verified,Jan-2016,Fully Paid,car,17.8,7,0,40.2%,700,704
+18000,60 months,14.99%,428.90,C,7 years,OWN,82000,Verified,Feb-2016,Charged Off,medical,19.9,10,1,65.4%,675,679
+9000,36 months,8.19%,282.45,A,1 year,MORTGAGE,52000,Source Verified,Mar-2016,Fully Paid,other,14.2,5,0,35.7%,710,714
+30000,60 months,18.25%,765.43,E,10+ years,RENT,110000,Verified,Dec-2015,Current,debt_consolidation,28.4,18,3,95.2%,650,654
+7000,36 months,6.99%,216.12,A,4 years,OWN,45000,Not Verified,Jan-2016,Fully Paid,vacation,12.5,4,0,25.8%,730,734
+22000,60 months,15.61%,534.67,D,6 years,MORTGAGE,95000,Source Verified,Feb-2016,Charged Off,house,23.6,11,1,70.3%,665,669
+14000,36 months,10.15%,452.89,B,8 years,RENT,68000,Verified,Mar-2016,Fully Paid,medical,16.7,8,0,48.6%,695,699
