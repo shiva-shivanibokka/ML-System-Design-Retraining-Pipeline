@@ -160,6 +160,7 @@ class ModelValidator:
         self.cfg = settings.validation
         self.dataset_cfg = settings.dataset
         self.mc_cfg = settings.model_card
+        self.require_all_gates = settings.validation.require_all_gates
 
     def validate(
         self,
@@ -275,7 +276,7 @@ class ModelValidator:
         decision.slice_results = slice_results
         failed = [r for r in slice_results if not r.passed]
         decision.failed_slices = [f"{r.slice_name}={r.cohort_value}" for r in failed]
-        decision.slice_gate_passed = len(failed) == 0
+        decision.slice_gate_passed = self._slice_gate_passed(slice_results)
         if failed:
             for f in failed:
                 decision.rejection_reasons.append(
@@ -283,8 +284,10 @@ class ModelValidator:
                     f"delta={f.delta_auc:.4f} (limit: -{self.cfg.slice_validation.max_degradation_per_slice:.4f})"
                 )
 
-        # Final decision
-        if settings.validation.require_all_gates:
+        # Final decision. The slice/fairness gate is ALWAYS blocking —
+        # require_all_gates governs only whether the hard floor is
+        # additionally required on top of the bootstrap CI gate.
+        if self.require_all_gates:
             decision.promoted = (
                 decision.bootstrap_gate_passed
                 and decision.hard_floor_passed
@@ -292,7 +295,7 @@ class ModelValidator:
             )
         else:
             decision.promoted = (
-                decision.bootstrap_gate_passed and decision.hard_floor_passed
+                decision.bootstrap_gate_passed and decision.slice_gate_passed
             )
 
         # Generate model card
@@ -449,6 +452,13 @@ class ModelValidator:
                 )
 
         return results
+
+    @staticmethod
+    def _slice_gate_passed(slice_results: List[SliceResult]) -> bool:
+        """Aggregate slice/fairness gate: passes only if every evaluated
+        cohort slice passed. An empty result list (e.g. slice validation
+        disabled, or no slice met min_slice_size) passes vacuously."""
+        return all(r.passed for r in slice_results)
 
     # -----------------------------------------------------------------------
     # Model Card
