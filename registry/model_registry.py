@@ -171,14 +171,12 @@ class ModelRegistry:
         Returns True if promotion succeeded.
         """
         try:
-            # Archive current champion (if any), then release the champion alias
+            # Archive current champion (if any); the champion alias is then
+            # reassigned atomically below via _set_champion_alias — no
+            # delete step, so there is never a window with no champion set.
             current_champion = self._get_champion()
             if current_champion is not None:
                 self._archive_alias(current_champion.version)
-                self._client.delete_registered_model_alias(
-                    name=self.cfg.model_name,
-                    alias=self.cfg.registered_model_aliases["champion"],
-                )
                 print(
                     f"Archived previous champion: "
                     f"{self.cfg.model_name} v{current_champion.version}"
