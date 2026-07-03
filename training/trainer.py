@@ -57,8 +57,11 @@ from sklearn.metrics import (
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 
+from configs.logging_config import get_logger
 from configs.paths import utcnow_naive
 from configs.settings import settings
+
+logger = get_logger(__name__)
 
 # LightGBM
 try:
@@ -345,7 +348,7 @@ class CreditRiskTrainer:
 
             # 1. Parameterized training window
             train_df, window_days = compute_training_window(df)
-            print(f"Training window: {window_days} days | rows: {len(train_df):,}")
+            logger.info("Training window: %s days | rows: %s", window_days, f"{len(train_df):,}")
             mlflow.log_param("training_window_days", window_days)
             mlflow.log_param("n_training_rows", len(train_df))
 
@@ -408,10 +411,11 @@ class CreditRiskTrainer:
             y_prob_test = booster.predict(X_test)
             metrics = compute_metrics(y_test, y_prob_test)
             mlflow.log_metrics(metrics)
-            print(
-                f"Test metrics: AUC={metrics['auc']:.4f} | "
-                f"KS={metrics['ks_statistic']:.4f} | "
-                f"Gini={metrics['gini']:.4f}"
+            logger.info(
+                "Test metrics: AUC=%.4f | KS=%.4f | Gini=%.4f",
+                metrics["auc"],
+                metrics["ks_statistic"],
+                metrics["gini"],
             )
 
             # 7. SHAP feature importance
@@ -489,9 +493,11 @@ class CreditRiskTrainer:
         )
 
         best = study.best_trial
-        print(
-            f"Optuna: best trial {best.number} | AUC={best.value:.4f} "
-            f"| {len(study.trials)} trials completed"
+        logger.info(
+            "Optuna: best trial %s | AUC=%.4f | %s trials completed",
+            best.number,
+            best.value,
+            len(study.trials),
         )
 
         # Log study summary to MLflow
@@ -590,7 +596,7 @@ class CreditRiskTrainer:
             return feat_importance, plot_path
 
         except Exception as e:
-            warnings.warn(f"SHAP computation failed: {e}", stacklevel=2)
+            logger.warning("SHAP computation failed: %s", e)
             return {}, None
 
     @staticmethod

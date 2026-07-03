@@ -60,8 +60,6 @@ MODEL CARD (Google Model Cards paper, 2019)
 from __future__ import annotations
 
 import json
-import logging
-import warnings
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -73,10 +71,11 @@ from sklearn.metrics import roc_auc_score
 
 import mlflow
 
+from configs.logging_config import get_logger
 from configs.settings import settings
 from training.trainer import compute_metrics, prepare_features, TrainingResult
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -536,7 +535,7 @@ class ModelValidator:
             with mlflow.start_run(run_id=result.run_id):
                 mlflow.log_artifact(str(card_path), artifact_path="model_card")
         except Exception as e:
-            warnings.warn(f"Could not log model card to MLflow: {e}", stacklevel=2)
+            logger.warning("Could not log model card to MLflow: %s", e)
 
         return str(card_path)
 
@@ -565,4 +564,4 @@ class ModelValidator:
                         }
                     )
         except Exception as e:
-            warnings.warn(f"MLflow validation logging failed: {e}", stacklevel=2)
+            logger.warning("MLflow validation logging failed: %s", e)

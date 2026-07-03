@@ -27,9 +27,7 @@ Rollback:
 
 from __future__ import annotations
 
-import logging
 import os
-import warnings
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Optional
@@ -40,11 +38,12 @@ import mlflow.lightgbm
 from mlflow import MlflowClient
 from mlflow.entities.model_registry import ModelVersion
 
+from configs.logging_config import get_logger
 from configs.settings import settings
 from training.trainer import TrainingResult
 from validation.validator import ValidationDecision
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 @dataclass
@@ -148,9 +147,10 @@ class ModelRegistry:
                 ),
             )
 
-            print(
-                f"Challenger registered: {self.cfg.model_name} v{mv.version} "
-                f"(awaiting validation)"
+            logger.info(
+                "Challenger registered: %s v%s (awaiting validation)",
+                self.cfg.model_name,
+                mv.version,
             )
             return mv
 
@@ -177,9 +177,10 @@ class ModelRegistry:
             current_champion = self._get_champion()
             if current_champion is not None:
                 self._archive_alias(current_champion.version)
-                print(
-                    f"Archived previous champion: "
-                    f"{self.cfg.model_name} v{current_champion.version}"
+                logger.info(
+                    "Archived previous champion: %s v%s",
+                    self.cfg.model_name,
+                    current_champion.version,
                 )
 
             # Promote challenger by pointing the champion alias at it
@@ -196,14 +197,17 @@ class ModelRegistry:
                 ),
             )
 
-            print(
-                f"PROMOTED: {self.cfg.model_name} v{challenger_version.version} → champion | "
-                f"AUC={decision.challenger_auc:.4f} (+{decision.auc_delta:.4f})"
+            logger.info(
+                "PROMOTED: %s v%s → champion | AUC=%.4f (+%.4f)",
+                self.cfg.model_name,
+                challenger_version.version,
+                decision.challenger_auc,
+                decision.auc_delta,
             )
             return True
 
         except Exception as e:
-            warnings.warn(f"Promotion failed: {e}", stacklevel=2)
+            logger.warning("Promotion failed: %s", e)
             return False
 
     def reject_challenger(
@@ -226,12 +230,14 @@ class ModelRegistry:
                     f"Reasons: {reasons_str}"
                 ),
             )
-            print(
-                f"REJECTED: {self.cfg.model_name} v{challenger_version.version} | "
-                f"{reasons_str}"
+            logger.info(
+                "REJECTED: %s v%s | %s",
+                self.cfg.model_name,
+                challenger_version.version,
+                reasons_str,
             )
         except Exception as e:
-            warnings.warn(f"Rejection tagging failed: {e}", stacklevel=2)
+            logger.warning("Rejection tagging failed: %s", e)
 
     # -----------------------------------------------------------------------
     # Load champion
@@ -258,7 +264,7 @@ class ModelRegistry:
                     "No champion alias set yet for %s — first run.",
                     self.cfg.model_name,
                 )
-                print("No champion model registered — this is the first run.")
+                logger.info("No champion model registered — this is the first run.")
                 return None
             logger.error("MLflow registry unreachable while loading champion: %s", e)
             raise
@@ -282,9 +288,11 @@ class ModelRegistry:
                 "Could not load encoders for champion run %s: %s", mv.run_id, e
             )
 
-        print(
-            f"Loaded champion: {self.cfg.model_name} v{mv.version} "
-            f"({len(encoders)} encoders)"
+        logger.info(
+            "Loaded champion: %s v%s (%s encoders)",
+            self.cfg.model_name,
+            mv.version,
+            len(encoders),
         )
         return ChampionBundle(
             booster=booster, encoders=encoders, version=str(mv.version)
@@ -330,7 +338,7 @@ class ModelRegistry:
                 )
             ]
             if not archived:
-                print("No archived models available for rollback.")
+                logger.info("No archived models available for rollback.")
                 return None
 
             # Most recently archived = highest version number
@@ -351,9 +359,10 @@ class ModelRegistry:
             except (TypeError, ValueError):
                 auc = 0.0
 
-            print(
-                f"ROLLBACK: Restored {self.cfg.model_name} "
-                f"v{latest_archived.version} to champion"
+            logger.info(
+                "ROLLBACK: Restored %s v%s to champion",
+                self.cfg.model_name,
+                latest_archived.version,
             )
             return RegistryEntry(
                 model_name=self.cfg.model_name,
@@ -366,7 +375,7 @@ class ModelRegistry:
             )
 
         except Exception as e:
-            warnings.warn(f"Rollback failed: {e}", stacklevel=2)
+            logger.warning("Rollback failed: %s", e)
             return None
 
     # -----------------------------------------------------------------------

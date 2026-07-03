@@ -38,6 +38,10 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Dict, List, Optional
 
+from configs.logging_config import get_logger
+
+logger = get_logger(__name__)
+
 try:
     import requests
 
@@ -283,10 +287,10 @@ class SlackAlerter:
         Never raises — alerting failures must not break the pipeline.
         """
         if not self._enabled:
-            # Print to stdout for local development visibility
-            print(f"[SLACK ALERT] {title}")
+            # Log for local development visibility
+            logger.info("[ALERT] %s", title)
             for f in fields:
-                print(f"  {f['title']}: {f['value']}")
+                logger.info("  %s: %s", f["title"], f["value"])
             return False
 
         payload = {
@@ -311,14 +315,13 @@ class SlackAlerter:
                 timeout=5,
             )
             if resp.status_code != 200:
-                warnings.warn(
-                    f"Slack webhook returned {resp.status_code}: {resp.text}",
-                    stacklevel=2,
+                logger.warning(
+                    "Slack webhook returned %s: %s", resp.status_code, resp.text
                 )
                 return False
             return True
         except Exception as e:
-            warnings.warn(f"Slack alert failed: {e}", stacklevel=2)
+            logger.warning("Slack alert failed: %s", e)
             return False
 
 

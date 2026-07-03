@@ -52,7 +52,10 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 
+from configs.logging_config import get_logger
 from configs.settings import settings
+
+logger = get_logger(__name__)
 
 # Optional Evidently import
 try:
@@ -368,7 +371,7 @@ class DriftDetector:
             return str(report_path)
 
         except Exception as e:
-            warnings.warn(f"Evidently report generation failed: {e}", stacklevel=2)
+            logger.warning("Evidently report generation failed: %s", e)
             return None
 
     # -----------------------------------------------------------------------

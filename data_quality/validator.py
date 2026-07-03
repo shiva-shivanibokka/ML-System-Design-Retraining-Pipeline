@@ -28,7 +28,6 @@ Fallback:
 
 from __future__ import annotations
 
-import logging
 import warnings
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -37,9 +36,10 @@ from typing import Dict, List, Optional, Tuple
 
 import pandas as pd
 
+from configs.logging_config import get_logger
 from configs.settings import settings
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # Optional Great Expectations import
 try:
