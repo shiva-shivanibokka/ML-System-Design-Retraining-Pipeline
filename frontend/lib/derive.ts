@@ -1,5 +1,5 @@
 import { fmtNum } from "@/lib/format";
-import type { Health, Run, Registry } from "@/lib/api";
+import type { Health, Run } from "@/lib/api";
 import type { ModelCard } from "@/lib/cards";
 
 export type StageState = "active" | "ok" | "warn" | "alert" | "idle" | "unknown";
