@@ -172,12 +172,18 @@ export default function PredictForm() {
       </form>
 
       {result && (
-        <div className="predict-result">
-          <strong>Default probability:</strong> {(result.default_probability * 100).toFixed(2)}%
-          {" · "}
-          <strong>Prediction:</strong> {result.default_prediction === 1 ? "Default" : "No default"}
-          {" · "}
-          <strong>Model version:</strong> {result.model_version}
+        <div className="glass pad" style={{ marginTop: "1rem" }}>
+          <div className="stat-title">Default probability</div>
+          <div className="stat-value mono" style={{ fontSize: "2.25rem" }}>
+            {(result.default_probability * 100).toFixed(2)}%
+          </div>
+          <p className="stat-sub">
+            <span className={`pill ${result.default_prediction === 1 ? "pill-red" : "pill-green"}`}>
+              {result.default_prediction === 1 ? "Default" : "No default"}
+            </span>
+            {" · "}
+            <strong>Model version:</strong> <span className="mono">{result.model_version}</span>
+          </p>
         </div>
       )}
       {error && <div className="predict-result error">{error}</div>}
