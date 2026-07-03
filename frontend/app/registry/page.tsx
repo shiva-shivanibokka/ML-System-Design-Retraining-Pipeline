@@ -1,4 +1,7 @@
 import { api } from "@/lib/api";
+import MetricTile from "@/components/MetricTile";
+import SectionHeader from "@/components/SectionHeader";
+import Timeline, { type TimelineItem } from "@/components/Timeline";
 
 export const dynamic = "force-dynamic";
 
@@ -7,49 +10,73 @@ export default async function RegistryPage() {
   const champion = registry.by_alias.champion;
   const archived = registry.by_alias.archived ?? [];
 
+  const items: TimelineItem[] = [];
+  if (champion) {
+    items.push({
+      id: `champion-${champion.run_id || "current"}`,
+      title: `v${champion.version}`,
+      sub: champion.description || champion.run_id,
+      tone: "green",
+      right: "champion",
+    });
+  }
+  archived.forEach((v, i) => {
+    items.push({
+      id: `archived-${v.run_id || "none"}-${i}`,
+      title: `v${v.version}`,
+      sub: v.description || v.run_id,
+      tone: "neutral",
+      right: "archived",
+    });
+  });
+
   return (
-    <div>
-      <h1>Model Registry</h1>
-      <p className="section-sub">
-        Champion and archived model versions ({registry.total_versions} total).
-      </p>
+    <div className="stack">
+      <SectionHeader
+        eyebrow="Model Registry"
+        title="Champion Lineage"
+        sub={`Champion and archived model versions (${registry.total_versions} total).`}
+      />
 
-      <h2>Champion</h2>
-      {champion ? (
-        <div className="card">
-          <div className="stat-value">v{champion.version}</div>
-          <p className="stat-sub">Run ID: {champion.run_id}</p>
-          <p>{champion.description || "No description"}</p>
+      <section>
+        <div className="grid">
+          <MetricTile label="Total Versions" value={registry.total_versions} />
+          <MetricTile label="Archived" value={archived.length} />
+          <MetricTile
+            label="Champion Version"
+            value={champion ? `v${champion.version}` : "—"}
+            tone={champion ? "green" : "neutral"}
+          />
         </div>
-      ) : (
-        <div className="empty-state">No champion is currently registered.</div>
-      )}
+      </section>
 
-      <h2>Archived ({archived.length})</h2>
-      {archived.length === 0 ? (
-        <div className="empty-state">No archived versions.</div>
-      ) : (
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Version</th>
-                <th>Run ID</th>
-                <th>Description</th>
-              </tr>
-            </thead>
-            <tbody>
-              {archived.map((v) => (
-                <tr key={v.run_id}>
-                  <td>v{v.version}</td>
-                  <td>{v.run_id}</td>
-                  <td>{v.description || "—"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <section>
+        <SectionHeader eyebrow="Current" title="Champion" />
+        {champion ? (
+          <div className="glass pad">
+            <div className="stat-value mono" style={{ fontSize: "2.25rem" }}>
+              v{champion.version}
+            </div>
+            <p className="stat-sub mono">{champion.run_id}</p>
+            <p>{champion.description || "No description"}</p>
+          </div>
+        ) : (
+          <div className="empty-state">No champion is currently registered.</div>
+        )}
+      </section>
+
+      <section>
+        <SectionHeader
+          eyebrow="History"
+          title="Lineage"
+          sub="Champion followed by every archived version, most recent first."
+        />
+        {items.length === 0 ? (
+          <div className="empty-state">No registry versions yet — promote a challenger to get started.</div>
+        ) : (
+          <Timeline items={items} />
+        )}
+      </section>
     </div>
   );
 }
