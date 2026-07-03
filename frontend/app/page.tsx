@@ -1,94 +1,57 @@
-import { api, type Run } from "@/lib/api";
-import StatCard from "@/components/StatCard";
-import PredictForm from "@/components/PredictForm";
-import Sparkline from "@/components/Sparkline";
-import { formatStartTime, fmtNum } from "@/lib/format";
+import { api } from "@/lib/api";
+import { latestCard } from "@/lib/cards";
+import { deriveLoopStages, deriveDecision, metricSeries, parseChampionAuc } from "@/lib/derive";
+import PipelineLoop from "@/components/PipelineLoop";
+import DecisionHero from "@/components/DecisionHero";
+import StatusStrip from "@/components/StatusStrip";
+import MetricTile from "@/components/MetricTile";
+import Chart from "@/components/Chart";
+import SectionHeader from "@/components/SectionHeader";
 
 export const dynamic = "force-dynamic";
 
-function parseChampionAuc(description: string | null | undefined, runs: Run[]): string {
-  if (description && description.includes("AUC=")) {
-    const auc = description.split("AUC=")[1]?.split("|")[0]?.trim();
-    if (auc) return auc;
-  }
-  const withAuc = runs.find((r) => typeof r["metrics.auc"] === "number");
-  if (withAuc) return fmtNum(Number(withAuc["metrics.auc"]));
-  return "N/A";
-}
-
 export default async function OverviewPage() {
-  const [health, runs, registry] = await Promise.all([
-    api.health(),
-    api.runs(20),
-    api.registry(),
+  const [health, runs, registry, drift, card] = await Promise.all([
+    api.health(), api.runs(30), api.registry(), api.driftLatest(), latestCard(),
   ]);
-
   const champion = registry.by_alias.champion;
-  const championAuc = parseChampionAuc(champion?.description, runs);
-  const aucSeries = runs
-    .filter((r) => typeof r["metrics.auc"] === "number")
-    .map((r) => Number(r["metrics.auc"]))
-    .reverse();
+  const stages = deriveLoopStages(health, drift, card);
+  const decision = deriveDecision(card);
+  const aucSeries = metricSeries(runs, "metrics.auc");
 
   return (
-    <div>
-      <h1>Pipeline Overview</h1>
-      <p className="section-sub">Current champion, recent runs, and a live scoring form.</p>
+    <div className="stack">
+      <section className="hero">
+        <div className="eyebrow">Automated MLOps · drift-triggered retraining</div>
+        <h1>The pipeline that keeps a credit-risk model honest.</h1>
+        <p className="hero-tagline">An automated, drift-triggered retraining pipeline. The model on the line is a credit-risk scorer — the system that keeps it honest is the point.</p>
+        <StatusStrip health={health} championVersion={champion?.version ? String(champion.version) : null} totalVersions={registry.total_versions} />
+      </section>
 
-      <div className="grid">
-        <StatCard title="Champion Version" value={champion ? `v${champion.version}` : "None"} />
-        <StatCard title="Champion AUC" value={championAuc} />
-        <StatCard title="Total Model Versions" value={registry.total_versions} />
-        <StatCard
-          title="Champion Loaded"
-          value={health.champion_loaded ? "Yes" : "No"}
-          sub={`API status: ${health.status}`}
-        />
-      </div>
+      <section>
+        <SectionHeader eyebrow="Lifecycle" title="The retraining loop" sub="Each stage reflects the live state of the pipeline right now." />
+        <PipelineLoop stages={stages} />
+      </section>
 
-      <h2>AUC Trend (Recent Runs)</h2>
-      {aucSeries.length >= 2 ? (
-        <div className="card">
-          <Sparkline values={aucSeries} ariaLabel="AUC trend" />
+      <section>
+        <SectionHeader eyebrow="Governance" title="Latest promotion decision" sub="Every challenger must clear all gates to replace the champion." />
+        <DecisionHero decision={decision} />
+      </section>
+
+      <section>
+        <SectionHeader eyebrow="Model" title="Champion at a glance" />
+        <div className="grid">
+          <MetricTile label="Champion Version" value={champion ? `v${champion.version}` : "None"} tone="green" />
+          <MetricTile label="Champion AUC" value={parseChampionAuc(champion?.description, runs)} />
+          <MetricTile label="Model Versions" value={registry.total_versions} />
+          <MetricTile label="Champion Loaded" value={health.champion_loaded ? "Yes" : "No"} tone={health.champion_loaded ? "green" : "red"} sub={`API: ${health.status}`} />
         </div>
-      ) : (
-        <div className="empty-state">Not enough runs with AUC to plot a trend yet.</div>
-      )}
+      </section>
 
-      <h2>Recent Training Runs</h2>
-      {runs.length === 0 ? (
-        <div className="empty-state">No training runs found. Run the pipeline first.</div>
-      ) : (
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Run ID</th>
-                <th>Status</th>
-                <th>Start Time</th>
-                <th>AUC</th>
-                <th>KS</th>
-                <th>Gini</th>
-              </tr>
-            </thead>
-            <tbody>
-              {runs.map((r) => (
-                <tr key={r.run_id}>
-                  <td>{r.run_id.slice(0, 8)}</td>
-                  <td>{String(r.status ?? "—")}</td>
-                  <td>{formatStartTime(r.start_time)}</td>
-                  <td>{fmtNum(r["metrics.auc"])}</td>
-                  <td>{fmtNum(r["metrics.ks_statistic"])}</td>
-                  <td>{fmtNum(r["metrics.gini"])}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      <h2>Score an Application</h2>
-      <PredictForm />
+      <section>
+        <SectionHeader eyebrow="Trend" title="AUC across recent runs" />
+        <div className="glass pad"><Chart values={aucSeries} ariaLabel="AUC trend" /></div>
+      </section>
     </div>
   );
 }
