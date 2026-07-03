@@ -1,14 +1,21 @@
 :root {
   color-scheme: dark;
-  --bg: #0b0e14;
-  --bg-elev: #131722;
-  --border: #232838;
-  --text: #e6e9f0;
-  --text-dim: #97a0b3;
-  --accent: #4f8cff;
+  --bg: #080a10;
+  --bg-elev: #10141f;
+  --bg-glass: rgba(22, 27, 40, 0.6);
+  --border: #1e2436;
+  --border-strong: #2c3448;
+  --text: #eef1f7;
+  --text-dim: #8b93a7;
+  --accent: #6ea8ff;
+  --accent-2: #8b5cf6;
+  --grad: linear-gradient(135deg, #6ea8ff, #8b5cf6);
   --green: #3ecf8e;
-  --yellow: #e0b23e;
+  --amber: #e0b23e;
   --red: #e05a5a;
+
+  /* legacy alias kept for any old references */
+  --yellow: var(--amber);
 }
 
 * {
@@ -22,10 +29,24 @@ body {
 }
 
 body {
+  position: relative;
   background: var(--bg);
   color: var(--text);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-family: var(--font-body), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   line-height: 1.5;
+  min-height: 100vh;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(60% 40% at 50% -10%, rgba(110, 168, 255, 0.16), transparent 70%),
+    radial-gradient(45% 35% at 85% 0%, rgba(139, 92, 246, 0.12), transparent 70%),
+    var(--bg);
 }
 
 a {
@@ -37,13 +58,30 @@ a:hover {
   text-decoration: underline;
 }
 
-h1, h2, h3 {
+h1,
+h2,
+h3,
+.eyebrow,
+.brand {
+  font-family: var(--font-display), var(--font-body), sans-serif;
+}
+
+.mono,
+td .mono,
+code {
+  font-family: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+h1,
+h2,
+h3 {
   font-weight: 600;
   margin: 0 0 0.5rem;
 }
 
 h1 {
-  font-size: 1.5rem;
+  font-size: 1.6rem;
+  letter-spacing: -0.01em;
 }
 
 h2 {
@@ -56,38 +94,153 @@ p.section-sub {
   margin-top: 0;
 }
 
+.eyebrow {
+  display: inline-block;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+/* ---------- glass surface ---------- */
+
+.glass {
+  background: var(--bg-glass);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.glass:hover {
+  border-color: var(--border-strong);
+  box-shadow: 0 0 0 1px rgba(110, 168, 255, 0.12), 0 0 24px rgba(139, 92, 246, 0.08);
+}
+
+/* ---------- status pills ---------- */
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.65rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.6;
+  white-space: nowrap;
+}
+
+.pill-green {
+  background: rgba(62, 207, 142, 0.15);
+  color: var(--green);
+}
+
+.pill-amber {
+  background: rgba(224, 178, 62, 0.15);
+  color: var(--amber);
+}
+
+.pill-red {
+  background: rgba(224, 90, 90, 0.15);
+  color: var(--red);
+}
+
+.pill-neutral {
+  background: rgba(139, 147, 167, 0.15);
+  color: var(--text-dim);
+}
+
+/* ---------- topbar / brand ---------- */
+
 .topbar {
   display: flex;
   align-items: center;
   gap: 2rem;
-  padding: 0.9rem 1.5rem;
+  padding: 1rem 1.5rem;
   border-bottom: 1px solid var(--border);
-  background: var(--bg-elev);
+  background: var(--bg-glass);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
   position: sticky;
   top: 0;
   z-index: 10;
 }
 
 .brand {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
   font-weight: 700;
   font-size: 1.05rem;
   white-space: nowrap;
 }
 
+.brand-mark {
+  font-size: 1.3rem;
+  line-height: 1;
+  background: var(--grad);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.brand-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+
+.brand-name {
+  font-family: var(--font-display), var(--font-body), sans-serif;
+  font-size: 1.02rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.brand-sub {
+  font-family: var(--font-body), sans-serif;
+  font-size: 0.72rem;
+  font-weight: 400;
+  color: var(--text-dim);
+}
+
 .topbar nav {
   display: flex;
-  gap: 1.25rem;
+  gap: 1.4rem;
   flex-wrap: wrap;
 }
 
 .topbar nav a {
+  position: relative;
   color: var(--text-dim);
   font-size: 0.92rem;
+  padding-bottom: 0.2rem;
 }
 
-.topbar nav a:hover {
+.topbar nav a::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 100%;
+  bottom: 0;
+  height: 2px;
+  background: var(--grad);
+  border-radius: 2px;
+  transition: right 0.2s ease;
+}
+
+.topbar nav a:hover,
+.topbar nav a.active {
   color: var(--text);
   text-decoration: none;
+}
+
+.topbar nav a:hover::after,
+.topbar nav a.active::after {
+  right: 0;
 }
 
 .container {
@@ -96,11 +249,21 @@ p.section-sub {
   padding: 1.75rem 1.5rem 4rem;
 }
 
+/* ---------- card / grid / stats ---------- */
+
 .card {
-  background: var(--bg-elev);
+  background: var(--bg-glass);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 14px;
   padding: 1.1rem 1.25rem;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.card:hover {
+  border-color: var(--border-strong);
+  box-shadow: 0 0 0 1px rgba(110, 168, 255, 0.12), 0 0 24px rgba(139, 92, 246, 0.08);
 }
 
 .grid {
@@ -119,6 +282,7 @@ p.section-sub {
 }
 
 .stat-value {
+  font-family: var(--font-display), var(--font-body), sans-serif;
   font-size: 1.6rem;
   font-weight: 700;
 }
@@ -129,15 +293,18 @@ p.section-sub {
   margin-top: 0.3rem;
 }
 
+/* ---------- tables ---------- */
+
 table {
   width: 100%;
   border-collapse: collapse;
   font-size: 0.88rem;
 }
 
-th, td {
+th,
+td {
   text-align: left;
-  padding: 0.5rem 0.65rem;
+  padding: 0.55rem 0.65rem;
   border-bottom: 1px solid var(--border);
   white-space: nowrap;
 }
@@ -150,14 +317,18 @@ th {
   letter-spacing: 0.03em;
 }
 
+tbody tr {
+  transition: background 0.15s ease;
+}
+
 tbody tr:hover {
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .table-wrap {
   overflow-x: auto;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 14px;
 }
 
 .table-wrap table {
@@ -169,8 +340,10 @@ tbody tr:hover {
   padding: 2rem 1rem;
   text-align: center;
   border: 1px dashed var(--border);
-  border-radius: 10px;
+  border-radius: 14px;
 }
+
+/* ---------- badges (legacy, kept alongside .pill) ---------- */
 
 .badge {
   display: inline-block;
@@ -187,13 +360,15 @@ tbody tr:hover {
 
 .badge-yellow {
   background: rgba(224, 178, 62, 0.15);
-  color: var(--yellow);
+  color: var(--amber);
 }
 
 .badge-red {
   background: rgba(224, 90, 90, 0.15);
   color: var(--red);
 }
+
+/* ---------- forms ---------- */
 
 form.predict-form,
 .explainer-controls {
@@ -217,7 +392,7 @@ form.predict-form,
 .field select {
   background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 8px;
   padding: 0.45rem 0.55rem;
   color: var(--text);
   font-size: 0.9rem;
@@ -230,20 +405,25 @@ form.predict-form,
 }
 
 button.btn {
-  background: var(--accent);
+  background: var(--grad);
   color: white;
   border: none;
-  border-radius: 6px;
+  border-radius: 8px;
   padding: 0.55rem 1.1rem;
   font-size: 0.9rem;
   font-weight: 600;
   cursor: pointer;
   grid-column: 1 / -1;
   width: fit-content;
+  transition: opacity 0.15s ease, transform 0.1s ease;
 }
 
 button.btn:hover {
   opacity: 0.9;
+}
+
+button.btn:active {
+  transform: translateY(1px);
 }
 
 button.btn:disabled {
@@ -254,7 +434,7 @@ button.btn:disabled {
 .predict-result {
   margin-top: 1rem;
   padding: 0.9rem 1rem;
-  border-radius: 8px;
+  border-radius: 10px;
   border: 1px solid var(--border);
   background: var(--bg);
 }
@@ -281,15 +461,27 @@ button.btn:disabled {
 }
 
 .bar-fill {
-  background: var(--accent);
+  background: var(--grad);
   height: 100%;
 }
 
 pre.json-block {
   background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 10px;
   padding: 0.75rem;
   overflow-x: auto;
   font-size: 0.8rem;
+  font-family: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* ---------- reduced motion ---------- */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
 }
