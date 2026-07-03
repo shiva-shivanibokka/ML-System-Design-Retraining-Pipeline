@@ -196,8 +196,15 @@ def compute_training_window(df: pd.DataFrame) -> Tuple[pd.DataFrame, int]:
         if len(subset) >= cfg.auto_min_rows:
             return subset, n_days
 
-    # Fallback: use all available data
-    return df, len(df)
+    # Fallback: no window met auto_min_rows — use all available data. Report the
+    # actual data span in DAYS (never a row count) so MLflow/model-card lineage
+    # stays honest.
+    if "batch_date" in df.columns and len(df) > 0:
+        _dates = pd.to_datetime(df["batch_date"])
+        window_days = int((_dates.max() - _dates.min()).days) or cfg.auto_max_days
+    else:
+        window_days = cfg.auto_max_days
+    return df, window_days
 
 
 # ---------------------------------------------------------------------------
@@ -247,11 +254,10 @@ def _build_optuna_objective(
     y_train: np.ndarray,
     X_val: pd.DataFrame,
     y_val: np.ndarray,
-    parent_run_id: str,
 ):
     """
     Returns an Optuna objective function for LightGBM HPO.
-    Each trial is logged as a child MLflow run under the parent.
+    Each trial is logged as a nested child MLflow run.
     """
     cfg = settings.training.optuna
     ss = cfg.search_space
@@ -272,6 +278,9 @@ def _build_optuna_objective(
                 "min_child_samples", *ss["min_child_samples"]
             ),
             "subsample": trial.suggest_float("subsample", *ss["subsample"]),
+            # bagging_freq must be >= 1 for `subsample` (bagging_fraction) to
+            # take effect at all — without it, row subsampling is a no-op.
+            "bagging_freq": trial.suggest_int("bagging_freq", 1, 7),
             "colsample_bytree": trial.suggest_float(
                 "colsample_bytree", *ss["colsample_bytree"]
             ),
@@ -486,9 +495,7 @@ class CreditRiskTrainer:
             pruner=pruner,
         )
 
-        objective = _build_optuna_objective(
-            X_train, y_train, X_val, y_val, parent_run_id
-        )
+        objective = _build_optuna_objective(X_train, y_train, X_val, y_val)
 
         study.optimize(
             objective,
@@ -565,6 +572,14 @@ class CreditRiskTrainer:
             sample_size = min(500, len(X_test))
             X_sample = X_test.sample(n=sample_size, random_state=42)
             shap_values = explainer.shap_values(X_sample)
+
+            # Some SHAP/LightGBM version combos return a per-class LIST for
+            # binary classification; take the positive class so the importance
+            # vector is shape (n_features,) and aligns 1:1 with X_test.columns
+            # (otherwise mean(axis=0) yields (n_samples, n_features) and the
+            # zip below silently misattributes importances to wrong features).
+            if isinstance(shap_values, list):
+                shap_values = shap_values[-1]
 
             # Mean absolute SHAP per feature = importance
             mean_abs_shap = np.abs(shap_values).mean(axis=0)

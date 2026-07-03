@@ -263,13 +263,24 @@ class DriftDetector:
 
         # Build bin edges from reference distribution
         quantiles = np.linspace(0, 100, n_bins + 1)
-        bin_edges = np.percentile(ref, quantiles)
+        raw_edges = np.percentile(ref, quantiles)
+        # Near-constant / heavily-tied reference → quantile edges collapse and
+        # ordinary binning can't discriminate (a constant reference yields
+        # [-inf, c, inf], which buckets both old and new values together and
+        # would report PSI=0 forever — so a feature that was constant in the
+        # reference window but varies in production could NEVER register drift).
+        # Detect degeneracy on the RAW edges (before forcing ±inf) and fall back
+        # to a discrete value-frequency PSI.
+        if len(np.unique(raw_edges)) < 3:
+            return self._categorical_psi(ref, cur)
+
+        bin_edges = raw_edges.copy()
         bin_edges[0] = -np.inf
         bin_edges[-1] = np.inf
         # Remove duplicate edges (can happen with heavy-tailed distributions)
         bin_edges = np.unique(bin_edges)
         if len(bin_edges) < 3:
-            return 0.0
+            return self._categorical_psi(ref, cur)
 
         ref_counts, _ = np.histogram(ref, bins=bin_edges)
         cur_counts, _ = np.histogram(cur, bins=bin_edges)
@@ -281,6 +292,22 @@ class DriftDetector:
 
         psi = np.sum((cur_pct - ref_pct) * np.log(cur_pct / ref_pct))
         return float(max(0.0, psi))  # PSI is non-negative
+
+    def _categorical_psi(self, ref: np.ndarray, cur: np.ndarray) -> float:
+        """PSI over discrete values — used when quantile bins collapse for a
+        near-constant reference feature. Compares value frequencies so a
+        reference-constant feature that varies in production still registers."""
+        ref = np.asarray(ref)
+        cur = np.asarray(cur)
+        values = np.unique(np.concatenate([ref, cur]))
+        eps = 1e-6
+        k = len(values)
+        psi = 0.0
+        for v in values:
+            ref_pct = (np.sum(ref == v) + eps) / (len(ref) + eps * k)
+            cur_pct = (np.sum(cur == v) + eps) / (len(cur) + eps * k)
+            psi += (cur_pct - ref_pct) * np.log(cur_pct / ref_pct)
+        return float(max(0.0, psi))
 
     def _psi_status(self, psi: float) -> str:
         if psi < self.cfg.psi.warning_threshold:

@@ -62,3 +62,28 @@ def test_degenerate_class_balance_fails():
     r = _blank_result(df)
     v._run_pandas_checks(df, r)
     assert r.passed is False
+
+
+def test_class_balance_helper_flags_degenerate():
+    """M7: the shared class-balance helper (now also called by the GE path)
+    must fail an all-one-class batch."""
+    v = DataQualityValidator()
+    df = canonical_frame(n=300, seed=1)
+    df["default"] = 1
+    r = _blank_result(df)
+    v._add_class_balance_check(df, r)
+    cb = [c for c in r.checks if c.name == "class_balance"]
+    assert cb and cb[0].passed is False
+
+
+def test_non_numeric_values_count_out_of_range():
+    """L10b: present-but-non-numeric values must count as out-of-range, not be
+    silently coerced to NaN and treated as in-range."""
+    v = DataQualityValidator()
+    df = canonical_frame(n=300, seed=2)
+    df["credit_score"] = df["credit_score"].astype(object)
+    df.loc[df.index[:60], "credit_score"] = "junk"  # 20% non-numeric
+    r = _blank_result(df)
+    v._run_pandas_checks(df, r)
+    rc = [c for c in r.checks if c.name == "range_credit_score"]
+    assert rc and not rc[0].passed

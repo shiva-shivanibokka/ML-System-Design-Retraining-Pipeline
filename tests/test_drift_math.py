@@ -18,6 +18,22 @@ def test_psi_large_for_shifted_distribution():
     assert d._compute_psi(ref, cur) > 0.2
 
 
+def test_psi_detects_shift_when_reference_is_constant():
+    """M5: a reference-constant feature that varies in production must NOT
+    silently report PSI=0 (quantile bins collapse → value-frequency fallback)."""
+    d = DriftDetector()
+    ref = np.zeros(2000)  # constant reference
+    cur = np.concatenate([np.zeros(1000), np.ones(1000)])  # now varies
+    assert d._compute_psi(ref, cur) > 0.1
+
+
+def test_psi_zero_when_both_constant_and_equal():
+    d = DriftDetector()
+    ref = np.full(1000, 5.0)
+    cur = np.full(1000, 5.0)
+    assert d._compute_psi(ref, cur) < 0.01
+
+
 def test_psi_is_nonnegative():
     d = DriftDetector()
     rng = np.random.default_rng(1)

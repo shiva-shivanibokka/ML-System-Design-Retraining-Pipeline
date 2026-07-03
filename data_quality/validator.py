@@ -218,23 +218,57 @@ class DataQualityValidator:
 
         ge_result = validator.validate()
 
-        # Translate GE results into our CheckResult objects
+        # Translate GE results into our CheckResult objects. Build into a local
+        # list first, then merge — so a mid-loop failure (e.g. a GE-version
+        # attribute rename) adds NOTHING and can't leave partial checks behind
+        # for the pandas fallback to double-count.
+        translated = []
         for exp_result in ge_result.results:
             expectation_type = exp_result.expectation_config.expectation_type
             passed = bool(exp_result.success)
             observed = exp_result.result.get("observed_value", "N/A")
-            check = CheckResult(
-                name=expectation_type,
-                passed=passed,
-                observed_value=observed,
-                expected_value=exp_result.expectation_config.kwargs,
+            translated.append(
+                CheckResult(
+                    name=expectation_type,
+                    passed=passed,
+                    observed_value=observed,
+                    expected_value=exp_result.expectation_config.kwargs,
+                    message=(
+                        f"{expectation_type}: observed={observed}"
+                        if not passed
+                        else f"{expectation_type}: OK"
+                    ),
+                )
+            )
+        for check in translated:
+            result.add_check(check)
+
+        # GE has no native class-balance expectation — add the degenerate-target
+        # check here too so validation doesn't silently depend on which path ran.
+        self._add_class_balance_check(df, result)
+
+    def _add_class_balance_check(
+        self, df: pd.DataFrame, result: ValidationResult
+    ) -> None:
+        """Degenerate-target guard (all-0s / all-1s), shared by both paths."""
+        target = self.dataset_cfg.target_column
+        if target not in df.columns:
+            return
+        pos_rate = df[target].mean()
+        balanced = 0.02 <= pos_rate <= 0.98
+        result.add_check(
+            CheckResult(
+                name="class_balance",
+                passed=bool(balanced),
+                observed_value=f"positive rate: {pos_rate:.2%}",
+                expected_value="between 2% and 98%",
                 message=(
-                    f"{expectation_type}: observed={observed}"
-                    if not passed
-                    else f"{expectation_type}: OK"
+                    f"Degenerate class balance: {pos_rate:.2%} positive"
+                    if not balanced
+                    else f"Class balance OK: {pos_rate:.2%} positive"
                 ),
             )
-            result.add_check(check)
+        )
 
     # -----------------------------------------------------------------------
     # Pandas fallback implementation
@@ -307,7 +341,13 @@ class DataQualityValidator:
             if col not in df.columns:
                 continue
             numeric = pd.to_numeric(df[col], errors="coerce")
-            out_of_range = ((numeric < lo) | (numeric > hi)).mean()
+            # A value that was present but non-numeric coerces to NaN and would
+            # otherwise compare False on both bounds → silently counted in-range.
+            # Treat such coercion failures as out-of-range.
+            coerce_failed = df[col].notna() & numeric.isna()
+            out_of_range = (
+                (numeric < lo) | (numeric > hi) | coerce_failed
+            ).mean()
             ok = out_of_range <= 0.01  # allow 1% tolerance
             result.add_check(
                 CheckResult(
@@ -362,19 +402,5 @@ class DataQualityValidator:
                 )
             )
 
-            # Class balance check — degenerate if > 98% one class
-            pos_rate = df[target].mean()
-            balanced = 0.02 <= pos_rate <= 0.98
-            result.add_check(
-                CheckResult(
-                    name="class_balance",
-                    passed=balanced,
-                    observed_value=f"positive rate: {pos_rate:.2%}",
-                    expected_value="between 2% and 98%",
-                    message=(
-                        f"Degenerate class balance: {pos_rate:.2%} positive"
-                        if not balanced
-                        else f"Class balance OK: {pos_rate:.2%} positive"
-                    ),
-                )
-            )
+        # Class balance check — degenerate-target guard (shared with GE path).
+        self._add_class_balance_check(df, result)
