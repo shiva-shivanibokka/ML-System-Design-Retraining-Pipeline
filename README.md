@@ -110,7 +110,7 @@ Three complementary signals:
 | Per-feature magnitude of shift | PSI (Population Stability Index) | PSI > 0.2 (Basel II standard) |
 | Model output drift | PSI on prediction score distribution | PSI > 0.15 |
 
-All three signals are displayed on the Streamlit dashboard with trend over time.
+All three signals are displayed on the Next.js dashboard (Vercel) with trend over time.
 
 ---
 
@@ -149,7 +149,8 @@ Challenger AUC must exceed champion AUC by at least +0.005. Prevents promoting a
 | Model card | Auto-generated JSON | First in portfolio |
 | Alerting | Slack webhook | First in portfolio |
 | Experiment tracking | MLflow | Existing — new usage: full Optuna study |
-| Dashboard | Streamlit (6 pages) | First primary Streamlit UI in ML System Design |
+| Serving API | FastAPI on Hugging Face Docker Space | Real model-serving boundary |
+| Dashboard | Next.js 14 (App Router, TypeScript) on Vercel | Modern web frontend, pure API client |
 | Containerization | Docker + docker-compose | Standard |
 
 ---
@@ -172,11 +173,12 @@ command, temporal-drift design, and real dataset stats.
 pip install -r requirements.txt
 ```
 
-### 2. Generate synthetic dataset
+### 2. Get the dataset
 
 ```bash
-# Generate initial training data + 30 daily batches (drift starts day 15)
-python data/generate_dataset.py --mode all --drift-mode covariate
+# Pull the DVC-tracked Lending Club reference + monthly batches (see data/README.md)
+dvc pull
+# ...or build them from the raw Kaggle CSV: see data/README.md
 ```
 
 ### 3. Start MLflow and Prefect
@@ -204,7 +206,8 @@ python pipelines/flows.py --flow retrain                 # retrain only
 
 | Service | URL |
 |---|---|
-| Streamlit dashboard | `streamlit run streamlit_app/app.py` → http://localhost:8501 |
+| Next.js dashboard | `cd frontend && npm run dev` → http://localhost:3000 (set `NEXT_PUBLIC_API_URL` to the serving API) |
+| Serving API (Swagger) | `uvicorn serving.app:app --port 8000` → http://localhost:8000/docs |
 | MLflow UI | http://localhost:5000 |
 | Prefect UI | http://localhost:4200 |
 
@@ -212,8 +215,7 @@ python pipelines/flows.py --flow retrain                 # retrain only
 
 ```bash
 docker-compose up --build
-# Then inside the pipeline container:
-docker exec retraining_pipeline python data/generate_dataset.py --mode all
+# Then run the pipeline on the latest real batch:
 docker exec retraining_pipeline python pipelines/flows.py --flow full
 ```
 

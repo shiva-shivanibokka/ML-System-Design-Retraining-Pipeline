@@ -2,15 +2,16 @@ version: "3.9"
 
 # =============================================================================
 # ML System Design: Automated Retraining Pipeline
-# Services: MLflow + Prefect Server + Streamlit dashboard
+# Local dev services: MLflow + Prefect Server + pipeline worker.
+# The dashboard is a Next.js app on Vercel (see frontend/) — not part of this
+# compose stack. The model-serving API deploys to a Hugging Face Docker Space
+# (see serving/Dockerfile); it is not run here either.
 # =============================================================================
 # Quick start:
 #   docker-compose up --build
 #
 # Then:
-#   python data/generate_dataset.py        # generate synthetic data
 #   python pipelines/flows.py --flow full  # run full pipeline locally
-#   open http://localhost:8501             # Streamlit dashboard
 #   open http://localhost:5000             # MLflow UI
 #   open http://localhost:4200             # Prefect UI
 
@@ -41,6 +42,11 @@ services:
       - mlflow-data:/mlflow
     networks:
       - pipeline-net
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1g
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
       interval: 15s
@@ -61,15 +67,28 @@ services:
       - pipeline-net
     environment:
       PREFECT_API_DATABASE_CONNECTION_URL: "sqlite+aiosqlite:////root/.prefect/prefect.db"
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1g
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4200/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
 
   # ── Pipeline Worker ────────────────────────────────────────────────────────
+  # One-shot: runs the full pipeline on the latest real batch. Requires the
+  # DVC-tracked datasets to be present on the host ./data (run `dvc pull` or
+  # data/build_batches.py first).
   pipeline:
     build:
       context: .
       dockerfile: Dockerfile
     container_name: retraining_pipeline
     restart: "no"
-    command: python data/generate_dataset.py --mode all
+    command: python pipelines/flows.py --flow full
     environment:
       MLFLOW_TRACKING_URI: http://mlflow:5000
       PREFECT_API_URL: http://prefect:4200/api
@@ -83,24 +102,8 @@ services:
         condition: service_healthy
     networks:
       - pipeline-net
-
-  # ── Streamlit Dashboard ────────────────────────────────────────────────────
-  streamlit:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: retraining_streamlit
-    restart: unless-stopped
-    command: streamlit run streamlit_app/app.py --server.port 8501 --server.address 0.0.0.0
-    ports:
-      - "8501:8501"
-    environment:
-      MLFLOW_TRACKING_URI: http://mlflow:5000
-      PYTHONPATH: /app
-    volumes:
-      - ./data:/app/data
-      - ./reports:/app/reports
-    depends_on:
-      - mlflow
-    networks:
-      - pipeline-net
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 4g
