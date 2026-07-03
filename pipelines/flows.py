@@ -39,14 +39,12 @@ Prefect features demonstrated:
 
 from __future__ import annotations
 
-import traceback
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
 import pandas as pd
-
-from prefect import flow, task, get_run_logger
+from prefect import flow, get_run_logger, task
 from prefect.artifacts import create_markdown_artifact
 
 from alerting.slack_alerts import alerter
@@ -56,7 +54,6 @@ from drift.detector import DriftDetector
 from registry.model_registry import ModelRegistry
 from training.trainer import CreditRiskTrainer
 from validation.validator import ModelValidator
-
 
 # ---------------------------------------------------------------------------
 # Shared helpers
@@ -470,7 +467,7 @@ def task_promote_or_reject(result, challenger_mv, decision):
             f"- Bootstrap gate: `{decision.bootstrap_gate_passed}`\n"
             f"- Slice gate: `{decision.slice_gate_passed}`\n"
             + (
-                f"- Rejection reasons:\n"
+                "- Rejection reasons:\n"
                 + "".join(f"  - {r}\n" for r in decision.rejection_reasons)
                 if not decision.promoted
                 else ""
@@ -543,8 +540,8 @@ def flow_retrain_validate_promote(
 # =============================================================================
 
 if __name__ == "__main__":
-    from configs.settings import validate_runtime_env
     from configs.logging_config import get_logger
+    from configs.settings import validate_runtime_env
 
     _log = get_logger("pipelines.flows")
     _problems = validate_runtime_env()

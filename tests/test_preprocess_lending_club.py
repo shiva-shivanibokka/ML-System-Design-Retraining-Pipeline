@@ -1,8 +1,15 @@
 # tests/test_preprocess_lending_club.py
-import pandas as pd
 from pathlib import Path
+
+import pandas as pd
+
 from data.preprocess_lending_club import (
-    preprocess, load_and_preprocess, _parse_term, _parse_emp_length, _strip_pct, _map_default,
+    _map_default,
+    _parse_emp_length,
+    _parse_term,
+    _strip_pct,
+    load_and_preprocess,
+    preprocess,
 )
 
 FIX = Path(__file__).parent / "fixtures" / "lending_club_sample.csv"

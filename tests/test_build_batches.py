@@ -1,6 +1,9 @@
 # tests/test_build_batches.py
-import numpy as np, pandas as pd
+import numpy as np
+import pandas as pd
+
 from data.build_batches import split_temporal, write_datasets
+
 
 def _frame():
     dates = pd.to_datetime(

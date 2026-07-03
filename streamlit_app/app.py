@@ -24,9 +24,7 @@ from __future__ import annotations
 
 import json
 import time
-from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional
 
 import pandas as pd
 import plotly.express as px
@@ -52,6 +50,7 @@ def get_mlflow_client():
     try:
         import mlflow
         from mlflow import MlflowClient
+
         from configs.settings import settings
 
         mlflow.set_tracking_uri(settings.mlflow.tracking_uri_local)
@@ -64,6 +63,7 @@ def get_mlflow_runs(experiment_name: str, max_runs: int = 50) -> pd.DataFrame:
     """Load MLflow runs as a dataframe."""
     try:
         import mlflow
+
         from configs.settings import settings
 
         mlflow.set_tracking_uri(settings.mlflow.tracking_uri_local)
@@ -73,7 +73,7 @@ def get_mlflow_runs(experiment_name: str, max_runs: int = 50) -> pd.DataFrame:
             max_results=max_runs,
         )
         return runs
-    except Exception as e:
+    except Exception:
         return pd.DataFrame()
 
 
@@ -139,7 +139,6 @@ if page == "Pipeline Overview":
 
     try:
         from registry.model_registry import ModelRegistry
-        from configs.settings import settings
 
         reg = ModelRegistry()
         status = reg.get_status()
@@ -258,7 +257,6 @@ elif page == "Drift Monitor":
     # Run drift detection
     try:
         from drift.detector import DriftDetector
-        from configs.settings import settings
 
         detector = DriftDetector()
         report = detector.detect(reference=ref_df, current=cur_df)

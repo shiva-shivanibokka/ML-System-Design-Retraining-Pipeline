@@ -40,9 +40,8 @@ from __future__ import annotations
 
 import time
 import warnings
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import mlflow
@@ -84,8 +83,8 @@ except ImportError:
 
 # SHAP
 try:
-    import shap
     import matplotlib
+    import shap
 
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -432,6 +431,7 @@ class CreditRiskTrainer:
 
             # Persist label encoders so serving + the validator can reproduce encoding.
             import joblib
+
             from configs.paths import temp_file
 
             enc_path = temp_file(prefix=f"encoders_{run_id[:8]}_", suffix=".joblib")

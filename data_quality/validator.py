@@ -31,8 +31,7 @@ from __future__ import annotations
 import warnings
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import List
 
 import pandas as pd
 
@@ -161,7 +160,7 @@ class DataQualityValidator:
         asset = data_source.add_dataframe_asset("batch")
         batch_request = asset.build_batch_request(dataframe=df)
 
-        suite = context.add_expectation_suite(
+        context.add_expectation_suite(
             expectation_suite_name="credit_risk_suite"
         )
         validator = context.get_validator(
@@ -358,7 +357,7 @@ class DataQualityValidator:
                     message=(
                         f"Target '{target}' contains non-binary values"
                         if not valid_target
-                        else f"Target binary: OK"
+                        else "Target binary: OK"
                     ),
                 )
             )

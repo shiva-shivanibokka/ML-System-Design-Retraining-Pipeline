@@ -1,5 +1,6 @@
 from drift.detector import DriftDetector
 
+
 def test_all_logic_ignores_absent_prediction_signal(monkeypatch):
     d = DriftDetector()
     d.trigger_logic = "all"  # adapt to real attribute

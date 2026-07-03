@@ -1,8 +1,10 @@
 # tests/test_encoder_roundtrip.py
 import joblib
 import pandas as pd
-from training.trainer import prepare_features
+
 from configs.paths import temp_file
+from training.trainer import prepare_features
+
 
 def test_encoders_roundtrip_preserve_encoding():
     df = pd.DataFrame({

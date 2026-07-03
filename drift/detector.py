@@ -41,12 +41,11 @@ Trigger logic (configured in config.yaml):
 
 from __future__ import annotations
 
-import json
 import warnings
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -59,14 +58,11 @@ logger = get_logger(__name__)
 
 # Optional Evidently import
 try:
-    from evidently import ColumnMapping
-    from evidently.report import Report
-    from evidently.metric_preset import DataDriftPreset, TargetDriftPreset
+    from evidently.metric_preset import DataDriftPreset
     from evidently.metrics import (
-        DataDriftTable,
         DatasetDriftMetric,
-        ColumnDriftMetric,
     )
+    from evidently.report import Report
 
     EVIDENTLY_AVAILABLE = True
 except ImportError:

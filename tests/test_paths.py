@@ -1,5 +1,5 @@
-from pathlib import Path
 from configs.paths import temp_dir, temp_file
+
 
 def test_temp_dir_exists_and_writable():
     d = temp_dir()

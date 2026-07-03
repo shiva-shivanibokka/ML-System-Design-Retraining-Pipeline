@@ -1,6 +1,6 @@
 # tests/test_champion_encoding.py
-import numpy as np
 import pandas as pd
+
 from training.trainer import prepare_features
 
 

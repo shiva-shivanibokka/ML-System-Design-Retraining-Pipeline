@@ -63,17 +63,16 @@ import json
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import List, Optional
 
+import mlflow
 import numpy as np
 import pandas as pd
 from sklearn.metrics import roc_auc_score
 
-import mlflow
-
 from configs.logging_config import get_logger
 from configs.settings import settings
-from training.trainer import compute_metrics, prepare_features, TrainingResult
+from training.trainer import TrainingResult, prepare_features
 
 logger = get_logger(__name__)
 

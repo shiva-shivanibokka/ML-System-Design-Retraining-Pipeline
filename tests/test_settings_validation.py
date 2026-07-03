@@ -1,5 +1,5 @@
-import os
 from configs.settings import validate_runtime_env
+
 
 def test_no_problems_when_local(monkeypatch):
     monkeypatch.setenv("MLFLOW_TRACKING_URI", "http://localhost:5000")

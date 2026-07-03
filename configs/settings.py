@@ -8,12 +8,11 @@ Usage: from configs.settings import settings
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 import yaml
-
 
 # ---------------------------------------------------------------------------
 # Leaf dataclasses

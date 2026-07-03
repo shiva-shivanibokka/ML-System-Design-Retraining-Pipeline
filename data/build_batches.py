@@ -15,7 +15,6 @@ the same feature whitelist that already protects the rest of the pipeline.
 """
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import pandas as pd

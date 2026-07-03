@@ -1,7 +1,8 @@
 # tests/test_fit_after_split.py
-import numpy as np
 import pandas as pd
+
 from training.trainer import prepare_features
+
 
 def test_encoder_vocab_only_from_fitted_frame():
     """Encoders must learn categories only from the frame they are fit on."""
