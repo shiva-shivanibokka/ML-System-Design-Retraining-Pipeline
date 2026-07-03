@@ -117,6 +117,7 @@ class SlackAlerter:
         n_psi_drifted: int,
         trigger_reasons: List[str],
         prediction_psi: Optional[float] = None,
+        narrative: Optional[str] = None,
     ) -> None:
         if not self.cfg.events.get("drift_detected", True):
             return
@@ -136,6 +137,10 @@ class SlackAlerter:
                     "value": f"{prediction_psi:.4f}",
                     "short": True,
                 }
+            )
+        if narrative:
+            fields.append(
+                {"title": "AI Drift Analysis", "value": narrative, "short": False}
             )
         fields.append(
             {

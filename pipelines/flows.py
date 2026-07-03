@@ -224,6 +224,18 @@ def task_run_drift(
     )
     report_dict = report.to_dict()
 
+    # Best-effort: generate an AI drift narrative when retrain is triggered,
+    # so it gets persisted inside the drift report artifact below.
+    if report_dict.get("retrain_triggered"):
+        try:
+            from alerting.llm_analyst import summarize_drift
+
+            narrative = summarize_drift(report_dict)
+            if narrative:
+                report_dict["narrative"] = narrative
+        except Exception as e:
+            logger.warning("Could not generate drift narrative: %s", e)
+
     # Best-effort: persist the drift report as a run artifact for the dashboard.
     try:
         import json
@@ -302,6 +314,16 @@ def flow_detect_drift(
     triggered = report_dict.get("retrain_triggered", False) or force_retrain
 
     if triggered:
+        narrative = report_dict.get("narrative")
+        if narrative:
+            try:
+                create_markdown_artifact(
+                    key="drift-narrative",
+                    markdown=f"**AI Drift Analysis**\n\n{narrative}",
+                )
+            except Exception as e:
+                logger.warning("Could not create drift-narrative artifact: %s", e)
+
         alerter.alert_drift_detected(
             batch_date=batch_date,
             n_ks_drifted=report_dict.get("n_features_ks_drifted", 0),
@@ -312,6 +334,7 @@ def flow_detect_drift(
                 if report_dict.get("prediction_drift")
                 else None
             ),
+            narrative=narrative,
         )
         logger.info("Retrain triggered — dispatching flow_retrain_validate_promote")
         # Dispatch Flow 3 as a subflow
