@@ -144,6 +144,16 @@ Challenger AUC must exceed champion AUC by at least +0.005. Prevents promoting a
 
 ---
 
+## Data
+
+The model trains on the real [Lending Club accepted-loans dataset](https://www.kaggle.com/datasets/wordsforthewise/lending-club)
+(2007–2018, CC0), not synthetic data. A reference dataset (2015, ~96K rows) plus 36
+chronological monthly drift batches (2016-01 .. 2018-12) are built from it and tracked
+with DVC. See [`data/README.md`](data/README.md) for the download command, build
+command, temporal-drift design, and real dataset stats.
+
+---
+
 ## Quickstart
 
 ### 1. Install dependencies

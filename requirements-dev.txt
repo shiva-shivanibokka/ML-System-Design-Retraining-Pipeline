@@ -1,6 +1,7 @@
 # Data versioning (Milestone 0)
 dvc==3.55.2
 dagshub==0.3.35
+pathspec==0.12.1  # pin: dvc 3.55.2 is incompatible with pathspec>=1.0 (_DIR_MARK import error)
 
 # Test + lint (Milestone 3)
 pytest==8.2.2

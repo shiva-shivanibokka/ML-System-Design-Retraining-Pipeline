@@ -4,8 +4,6 @@ __pycache__/
 venv/
 .env
 data/raw/
-data/processed/
-data/reference/
 reports/
 models/champion/
 models/challenger/

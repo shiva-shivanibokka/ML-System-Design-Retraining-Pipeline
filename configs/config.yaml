@@ -9,7 +9,7 @@
 # -----------------------------------------------------------------------------
 dataset:
   name: "credit_risk"
-  description: "Synthetic credit risk dataset — loan default prediction (binary)"
+  description: "Lending Club accepted-loans dataset (2007-2018, real, CC0) — loan default prediction (binary); reference=2015, monthly drift batches 2016-2018"
   target_column: "default"
   positive_label: 1                    # 1 = defaulted, 0 = paid
   n_initial_rows: 5000                 # rows in the baseline training set
