@@ -1,28 +1,26 @@
 import Link from "next/link";
 import { api } from "@/lib/api";
+import type { ModelCard } from "@/lib/cards";
+import { deriveDecision } from "@/lib/derive";
+import GateCheck from "@/components/GateCheck";
+import MetricTile from "@/components/MetricTile";
+import SectionHeader from "@/components/SectionHeader";
 import { fmtNum, numOr0 } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
-type ModelCard = {
-  training?: {
-    window_days?: number;
-    n_rows?: number;
-    optuna_trials?: number;
-    duration_seconds?: number;
-  };
-  overall_metrics?: Record<string, unknown>;
-  promotion_decision?: Record<string, unknown>;
-  feature_importance_top10?: Record<string, number>;
-  champion_vs_challenger?: Record<string, unknown>;
-  hyperparameters?: Record<string, unknown>;
-};
-
+// Fallback for the two sections with no bespoke renderer (free-form JSON blobs).
 function JsonBlock({ data }: { data: Record<string, unknown> | undefined }) {
   if (!data || Object.keys(data).length === 0) {
     return <div className="empty-state">Not available.</div>;
   }
   return <pre className="json-block">{JSON.stringify(data, null, 2)}</pre>;
+}
+
+function kvValue(value: unknown): string {
+  if (value === null || value === undefined) return "—";
+  if (typeof value === "object") return JSON.stringify(value);
+  return String(value);
 }
 
 export default async function ModelCardsPage({
@@ -34,21 +32,27 @@ export default async function ModelCardsPage({
   const selectedId = searchParams.id ?? ids[0];
   const card = selectedId ? ((await api.modelCard(selectedId)) as ModelCard) : null;
 
+  const training = card?.training;
+  const overallMetrics = card?.overall_metrics ?? {};
+  const decision = deriveDecision(card ?? null);
   const featImp = card?.feature_importance_top10 ?? {};
   const maxImp = Math.max(1e-9, ...Object.values(featImp).map((v) => Math.abs(numOr0(v))));
+  const cvc = card?.champion_vs_challenger;
+  const hyperparams = card?.hyperparameters ?? {};
 
   return (
-    <div>
-      <h1>Model Cards</h1>
-      <p className="section-sub">
-        Auto-generated documentation for every training run (Mitchell et al., 2019).
-      </p>
+    <div className="stack">
+      <SectionHeader
+        eyebrow="Documentation"
+        title="Model Cards"
+        sub="Auto-generated documentation for every training run (Mitchell et al., 2019)."
+      />
 
       {ids.length === 0 ? (
         <div className="empty-state">No model cards found. Run the retrain flow to generate one.</div>
       ) : (
         <>
-          <div className="card" style={{ marginBottom: "1.5rem" }}>
+          <div className="card">
             <div className="stat-title">Select a run</div>
             <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap", marginTop: "0.5rem" }}>
               {ids.map((id) => (
@@ -68,47 +72,146 @@ export default async function ModelCardsPage({
             <div className="empty-state">No model card artifact found for this run.</div>
           ) : (
             <>
-              <h2>Training Info</h2>
-              <JsonBlock
-                data={{
-                  window_days: card.training?.window_days,
-                  n_rows: card.training?.n_rows,
-                  optuna_trials: card.training?.optuna_trials,
-                  duration_seconds: card.training?.duration_seconds,
-                }}
-              />
+              <section>
+                <h2>Training Info</h2>
+                {!training ? (
+                  <div className="empty-state">No training metadata in this card.</div>
+                ) : (
+                  <div className="grid">
+                    <MetricTile label="Window (days)" value={training.window_days ?? "—"} />
+                    <MetricTile label="Rows" value={training.n_rows ?? "—"} />
+                    <MetricTile label="Optuna Trials" value={training.optuna_trials ?? "—"} />
+                    <MetricTile label="Duration (s)" value={fmtNum(training.duration_seconds, 1)} />
+                  </div>
+                )}
+              </section>
 
-              <h2>Overall Metrics</h2>
-              <JsonBlock data={card.overall_metrics} />
+              <section>
+                <h2>Overall Metrics</h2>
+                {Object.keys(overallMetrics).length === 0 ? (
+                  <div className="empty-state">No overall metrics in this card.</div>
+                ) : (
+                  <div className="grid">
+                    {Object.entries(overallMetrics).map(([key, value]) => (
+                      <MetricTile key={key} label={key} value={fmtNum(value)} />
+                    ))}
+                  </div>
+                )}
+              </section>
 
-              <h2>Promotion Decision</h2>
-              <JsonBlock data={card.promotion_decision} />
-
-              <h2>Top-10 SHAP Feature Importance</h2>
-              {Object.keys(featImp).length === 0 ? (
-                <div className="empty-state">No feature importance data in this card.</div>
-              ) : (
-                <div className="card">
-                  {Object.entries(featImp).map(([feature, value]) => (
-                    <div className="bar-row" key={feature}>
-                      <span>{feature}</span>
-                      <div className="bar-track">
-                        <div
-                          className="bar-fill"
-                          style={{ width: `${(Math.abs(numOr0(value)) / maxImp) * 100}%` }}
-                        />
-                      </div>
-                      <span>{fmtNum(value)}</span>
+              <section>
+                <h2>Promotion Decision</h2>
+                {!decision ? (
+                  <div className="empty-state">No promotion decision recorded for this run.</div>
+                ) : (
+                  <div className="card">
+                    <span
+                      className={`pill pill-${
+                        decision.verdict === "promoted" ? "green" : decision.verdict === "rejected" ? "red" : "neutral"
+                      }`}
+                    >
+                      {decision.verdict === "promoted" ? "PROMOTED" : decision.verdict === "rejected" ? "REJECTED" : "UNKNOWN"}
+                    </span>
+                    <div className="decision-gates" style={{ marginTop: "1rem" }}>
+                      {decision.gates.map((g) => (
+                        <GateCheck key={g.label} label={g.label} passed={g.passed} detail={g.detail} />
+                      ))}
                     </div>
-                  ))}
-                </div>
-              )}
+                    {decision.reasons.length > 0 && (
+                      <div className="decision-reasons">
+                        <div className="eyebrow">Why it was held back</div>
+                        <ul>
+                          {decision.reasons.map((r, i) => (
+                            <li key={i}>{r}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </section>
 
-              <h2>Champion vs Challenger</h2>
-              <JsonBlock data={card.champion_vs_challenger} />
+              <section>
+                <h2>Top-10 SHAP Feature Importance</h2>
+                {Object.keys(featImp).length === 0 ? (
+                  <div className="empty-state">No feature importance data in this card.</div>
+                ) : (
+                  <div className="card">
+                    {Object.entries(featImp).map(([feature, value]) => (
+                      <div className="bar-row" key={feature}>
+                        <span>{feature}</span>
+                        <div className="bar-track">
+                          <div
+                            className="bar-fill"
+                            style={{ width: `${(Math.abs(numOr0(value)) / maxImp) * 100}%` }}
+                          />
+                        </div>
+                        <span>{fmtNum(value)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
 
-              <h2>Hyperparameters</h2>
-              <JsonBlock data={card.hyperparameters} />
+              <section>
+                <h2>Champion vs Challenger</h2>
+                {!cvc || Object.keys(cvc).length === 0 ? (
+                  <div className="empty-state">No champion/challenger comparison in this card.</div>
+                ) : (
+                  <div className="card">
+                    <dl
+                      style={{
+                        margin: 0,
+                        display: "grid",
+                        gridTemplateColumns: "auto 1fr",
+                        rowGap: "0.6rem",
+                        columnGap: "1.5rem",
+                        alignItems: "baseline",
+                      }}
+                    >
+                      <dt className="stat-title" style={{ margin: 0 }}>Challenger AUC</dt>
+                      <dd className="mono" style={{ margin: 0 }}>{fmtNum(cvc.challenger_auc)}</dd>
+
+                      <dt className="stat-title" style={{ margin: 0 }}>Champion AUC</dt>
+                      <dd className="mono" style={{ margin: 0 }}>{fmtNum(cvc.champion_auc)}</dd>
+
+                      <dt className="stat-title" style={{ margin: 0 }}>AUC Delta</dt>
+                      <dd className="mono" style={{ margin: 0 }}>{fmtNum(cvc.auc_delta)}</dd>
+
+                      <dt className="stat-title" style={{ margin: 0 }}>Bootstrap CI</dt>
+                      <dd style={{ margin: 0, color: "var(--text-dim)" }}>
+                        {cvc.bootstrap_ci?.message ?? "—"}
+                      </dd>
+                    </dl>
+                  </div>
+                )}
+              </section>
+
+              <section>
+                <h2>Hyperparameters</h2>
+                {Object.keys(hyperparams).length === 0 ? (
+                  <div className="empty-state">No hyperparameters recorded.</div>
+                ) : (
+                  <div className="card kv">
+                    {Object.entries(hyperparams).map(([key, value]) => (
+                      <div className="kv-row" key={key}>
+                        <span className="kv-key">{key}</span>
+                        <span className="mono">{kvValue(value)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+
+              <section>
+                <h2>Data Quality Summary</h2>
+                <JsonBlock data={card.data_quality_summary} />
+              </section>
+
+              <section>
+                <h2>Drift at Trigger</h2>
+                <JsonBlock data={card.drift_at_trigger} />
+              </section>
             </>
           )}
         </>
