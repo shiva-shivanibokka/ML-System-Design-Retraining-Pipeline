@@ -8,6 +8,16 @@ The core question this project answers:
 
 ---
 
+## Live Demo
+
+| Service | URL |
+|---|---|
+| Frontend dashboard (Vercel) | `<vercel-app-url>` |
+| Serving API docs (Hugging Face Space) | `<hf-space-url>/docs` |
+| MLflow experiment tracking (DagsHub) | `<dagshub-mlflow-url>` |
+
+---
+
 ## Architecture
 
 ```
