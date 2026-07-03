@@ -591,6 +591,45 @@ button.btn:disabled {
   height: 100%;
 }
 
+/* ---------- delta bar (fairness / slice gate) ---------- */
+
+.delta-bar {
+  position: relative;
+  height: 10px;
+  border-radius: 4px;
+  background: var(--border);
+  overflow: hidden;
+}
+
+.delta-bar::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--border-strong);
+  transform: translateX(-1px);
+  z-index: 1;
+}
+
+.delta-neg,
+.delta-pos {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+}
+
+.delta-neg {
+  right: 50%;
+  background: var(--red);
+}
+
+.delta-pos {
+  left: 50%;
+  background: var(--green);
+}
+
 pre.json-block {
   background: var(--bg);
   border: 1px solid var(--border);
