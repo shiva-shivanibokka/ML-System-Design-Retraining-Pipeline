@@ -70,6 +70,8 @@ h3,
 td .mono,
 code {
   font-family: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+  overflow-wrap: break-word;
+  word-break: break-word;
 }
 
 h1,
@@ -603,6 +605,12 @@ button.btn:disabled {
   gap: 0.6rem;
   margin-bottom: 0.4rem;
   font-size: 0.85rem;
+}
+
+.bar-row > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .bar-track {
