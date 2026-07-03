@@ -829,6 +829,87 @@ pre.json-block {
   padding: 1.5rem;
 }
 
+/* ---------- timeline ---------- */
+
+.timeline {
+  position: relative;
+  list-style: none;
+  margin: 0 0 1.5rem;
+  padding: 0 0 0 1.6rem;
+}
+
+.timeline::before {
+  content: "";
+  position: absolute;
+  left: 0.28rem;
+  top: 0.4rem;
+  bottom: 0.4rem;
+  width: 2px;
+  background: var(--border);
+}
+
+.timeline-item {
+  position: relative;
+  padding: 0 0 1.1rem;
+}
+
+.timeline-item:last-child {
+  padding-bottom: 0;
+}
+
+.timeline-dot {
+  position: absolute;
+  left: -1.6rem;
+  top: 0.3rem;
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 999px;
+  background: var(--text-dim);
+}
+
+.tl-green .timeline-dot {
+  background: var(--green);
+  box-shadow: 0 0 8px rgba(62, 207, 142, 0.55);
+}
+
+.tl-amber .timeline-dot {
+  background: var(--amber);
+  box-shadow: 0 0 8px rgba(224, 178, 62, 0.5);
+}
+
+.tl-red .timeline-dot {
+  background: var(--red);
+  box-shadow: 0 0 8px rgba(224, 90, 90, 0.55);
+}
+
+.tl-neutral .timeline-dot {
+  background: var(--text-dim);
+}
+
+.timeline-body {
+  padding-left: 0.1rem;
+}
+
+.timeline-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.timeline-sub {
+  color: var(--text-dim);
+  font-size: 0.78rem;
+  margin-top: 0.15rem;
+}
+
+.timeline-right {
+  font-size: 0.72rem;
+  color: var(--text-dim);
+}
+
 /* ---------- reduced motion ---------- */
 
 @media (prefers-reduced-motion: reduce) {
