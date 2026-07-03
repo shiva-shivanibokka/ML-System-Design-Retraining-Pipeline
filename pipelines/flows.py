@@ -88,6 +88,21 @@ def _load_all_processed_data() -> pd.DataFrame:
     return pd.concat([pd.read_parquet(f) for f in files], ignore_index=True)
 
 
+def notify_pipeline_failure(flow, flow_run, state) -> None:
+    """Prefect on_failure hook — fire a Slack pipeline-error alert. Never raises."""
+    try:
+        flow_name = getattr(flow, "name", "unknown_flow")
+        run_name = getattr(flow_run, "name", "unknown_run")
+        message = getattr(state, "message", "") or "Flow failed"
+        alerter.alert_pipeline_error(
+            flow_name=str(flow_name),
+            task_name=str(run_name),
+            error_message=str(message),
+        )
+    except Exception:
+        pass
+
+
 # =============================================================================
 # FLOW 1: ingest_and_validate
 # =============================================================================
@@ -141,6 +156,7 @@ def task_append_to_processed(df: pd.DataFrame, batch_date: str) -> str:
     description="Daily data ingestion with Great Expectations quality gates",
     retries=settings.prefect.retries,
     retry_delay_seconds=settings.prefect.retry_delay_seconds,
+    on_failure=[notify_pipeline_failure],
 )
 def flow_ingest_and_validate(
     batch_path: str,
@@ -232,6 +248,7 @@ def task_run_drift(
     description="Daily drift detection: KS test + PSI + Evidently. Triggers retrain if needed.",
     retries=settings.prefect.retries,
     retry_delay_seconds=settings.prefect.retry_delay_seconds,
+    on_failure=[notify_pipeline_failure],
 )
 def flow_detect_drift(
     batch_date: Optional[str] = None,
@@ -472,6 +489,7 @@ def task_promote_or_reject(result, challenger_mv, decision):
     ),
     retries=1,
     retry_delay_seconds=120,
+    on_failure=[notify_pipeline_failure],
 )
 def flow_retrain_validate_promote(
     drift_report: Optional[dict] = None,
@@ -525,6 +543,16 @@ def flow_retrain_validate_promote(
 # =============================================================================
 
 if __name__ == "__main__":
+    from configs.settings import validate_runtime_env
+    from configs.logging_config import get_logger
+
+    _log = get_logger("pipelines.flows")
+    _problems = validate_runtime_env()
+    if _problems:
+        for _p in _problems:
+            _log.error("CONFIG: %s", _p)
+        raise SystemExit("Aborting: configuration problems above. See .env.example.")
+
     import argparse
 
     parser = argparse.ArgumentParser(description="Run retraining pipeline flows")

@@ -297,3 +297,22 @@ def _load() -> Settings:
 
 
 settings: Settings = _load()
+
+
+def validate_runtime_env(require_remote_mlflow: bool = False) -> list[str]:
+    """Return a list of config problems (empty list = OK).
+
+    Checks env-var presence for the active configuration. Production
+    entrypoints should raise if this returns non-empty.
+    """
+    problems: list[str] = []
+    uri = os.getenv("MLFLOW_TRACKING_URI", "")
+    is_dagshub = "dagshub.com" in uri
+    if require_remote_mlflow or is_dagshub:
+        if not uri:
+            problems.append("MLFLOW_TRACKING_URI is not set")
+        if not os.getenv("MLFLOW_TRACKING_USERNAME"):
+            problems.append("MLFLOW_TRACKING_USERNAME is required for DagsHub MLflow")
+        if not os.getenv("MLFLOW_TRACKING_PASSWORD"):
+            problems.append("MLFLOW_TRACKING_PASSWORD is required for DagsHub MLflow")
+    return problems
