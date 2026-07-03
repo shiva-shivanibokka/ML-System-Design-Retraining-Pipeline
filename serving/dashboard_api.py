@@ -23,14 +23,27 @@ def _client():
 
 
 def _search_runs(limit: int) -> pd.DataFrame:
+    """Return the most recent *parent* (retrain) runs, newest first.
+
+    Optuna logs each HPO trial as a nested child run. Those children start
+    after their parent and would otherwise crowd out — or entirely hide — the
+    real retrain run under a small ``limit``. Over-fetch, drop children
+    (any row carrying ``tags.mlflow.parentRunId``), then apply the limit so
+    callers always see actual retrain runs, never HPO trials.
+    """
     import mlflow
 
     mlflow.set_tracking_uri(settings.mlflow.tracking_uri)
-    return mlflow.search_runs(
+    df = mlflow.search_runs(
         experiment_names=[settings.mlflow.experiment_name],
         order_by=["start_time DESC"],
-        max_results=limit,
+        max_results=max(limit * 20, 200),
     )
+    if df is None or df.empty:
+        return df
+    if "tags.mlflow.parentRunId" in df.columns:
+        df = df[df["tags.mlflow.parentRunId"].isna()]
+    return df.head(limit).reset_index(drop=True)
 
 
 def _registry_snapshot() -> dict:

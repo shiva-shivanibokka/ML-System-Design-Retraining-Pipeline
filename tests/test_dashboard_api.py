@@ -5,6 +5,22 @@ import pandas as pd
 from fastapi.testclient import TestClient
 
 from serving import app as appmod
+from serving import dashboard_api
+
+
+def test_search_runs_drops_optuna_child_runs_before_limit():
+    """Optuna trial child runs (which carry tags.mlflow.parentRunId and start
+    after the parent) must never crowd out or hide the real retrain run."""
+    # Children start later, so DESC order puts them first; parent is last.
+    rows = [
+        {"run_id": f"trial_{i}", "start_time": 100 + i, "tags.mlflow.parentRunId": "parent"}
+        for i in range(6)
+    ]
+    rows.append({"run_id": "parent", "start_time": 50, "tags.mlflow.parentRunId": None})
+    fake = pd.DataFrame(rows)
+    with patch("mlflow.search_runs", return_value=fake), patch("mlflow.set_tracking_uri"):
+        out = dashboard_api._search_runs(limit=5)
+    assert list(out["run_id"]) == ["parent"]
 
 
 def test_runs_endpoint_returns_list():
