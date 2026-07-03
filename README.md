@@ -64,6 +64,44 @@ DAILY SCHEDULE (Prefect 2)
 └─────────────────────────────────────────────────────────┘
 ```
 
+**Deployed system topology:**
+
+```
+┌──────────────────────┐        HTTPS         ┌───────────────────────────┐
+│  Next.js frontend     │ ────────────────────▶│  FastAPI serving API       │
+│  (Vercel)             │◀──────────────────── │  (Hugging Face Docker      │
+│  /predict /drift/latest│      JSON            │   Space, port 7860)        │
+│  /registry /training  │                       │  loads champion via MLflow│
+└──────────────────────┘                       └─────────────┬──────────────┘
+                                                                │
+                                                                ▼
+                                                 ┌───────────────────────────┐
+                                                 │  DagsHub-hosted MLflow     │
+                                                 │  tracking + model registry │
+                                                 │  + artifacts (drift, cards)│
+                                                 └───────────────────────────┘
+                                                                ▲
+                              ┌─────────────────────────────────┤
+                              │                                 │
+              ┌───────────────────────────┐      ┌───────────────────────────┐
+              │  GitHub Actions: ci.yml    │      │  GitHub Actions:           │
+              │  lint + pytest on every PR │      │  retrain.yml (nightly cron)│
+              └───────────────────────────┘      │  runs Prefect flows 1→2→3  │
+                                                    │  Flow 2 drift narrative:   │
+                                                    │  Claude Haiku 4.5 via      │
+                                                    │  alerting/llm_analyst.py   │
+                                                    └───────────────────────────┘
+                              GitHub Actions: deploy-space.yml
+                              syncs serving/ → HF Space on every push
+```
+
+The AI drift analyst (`alerting/llm_analyst.py`) calls Claude Haiku 4.5 whenever
+`flow_detect_drift` triggers a retrain: it turns the raw KS/PSI numbers into a
+3–4 sentence plain-English narrative, which is attached to the Slack alert, a
+Prefect markdown artifact, and the persisted drift-report JSON (so the Next.js
+`/drift` page can render it). It degrades gracefully to `None` — no `ANTHROPIC_API_KEY`,
+no `anthropic` package, or any API error — and the pipeline continues unaffected.
+
 ---
 
 ## What Makes This Production-Grade
@@ -80,6 +118,8 @@ DAILY SCHEDULE (Prefect 2)
 | Evidently HTML report | Full feature drift report attached as MLflow artifact | Evidently AI |
 | Optuna HPO per retrain | 30 TPE trials with median pruner; all logged as MLflow child runs | State of the art HPO |
 | Champion/challenger rollback | Most recent Archived model can be re-promoted in one call | Standard model registry |
+| LLM drift analyst | Claude Haiku 4.5 turns raw KS/PSI drift signals into a plain-English narrative on Slack, Prefect, and the dashboard; graceful `None` degradation if unset | Emerging MLOps pattern — LLM-assisted observability |
+| CI/CD | GitHub Actions: lint + test on PR, nightly scheduled retrain, auto-deploy serving API to HF Spaces | Standard MLOps CI/CD |
 
 ---
 
@@ -151,6 +191,8 @@ Challenger AUC must exceed champion AUC by at least +0.005. Prevents promoting a
 | Experiment tracking | MLflow | Existing — new usage: full Optuna study |
 | Serving API | FastAPI on Hugging Face Docker Space | Real model-serving boundary |
 | Dashboard | Next.js 14 (App Router, TypeScript) on Vercel | Modern web frontend, pure API client |
+| LLM drift analyst | Claude Haiku 4.5 (Anthropic SDK) | First LLM integration in portfolio |
+| CI/CD | GitHub Actions (`ci.yml`, `retrain.yml`, `deploy-space.yml`) | First in portfolio |
 | Containerization | Docker + docker-compose | Standard |
 
 ---
@@ -219,11 +261,21 @@ docker-compose up --build
 docker exec retraining_pipeline python pipelines/flows.py --flow full
 ```
 
-### 7. Configure Slack alerts (optional)
+### 7. Configure optional integrations
 
 ```bash
+# Slack alerts on every pipeline event (drift, DQ failure, retrain, promote, reject)
 export SLACK_WEBHOOK_URL="https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
+
+# AI drift narrative (Claude Haiku 4.5) — attached to Slack alerts, Prefect
+# artifacts, and the persisted drift report when a retrain is triggered
+export ANTHROPIC_API_KEY="sk-ant-..."
 ```
+
+Both are no-ops when unset — the pipeline runs identically without them. See
+[`.env.example`](.env.example) for the full list of environment variables
+(MLflow/DagsHub tracking, DVC storage, Slack, the LLM analyst, the serving
+API's CORS origins, HF Space deploy credentials, Prefect, logging).
 
 ---
 
