@@ -1,8 +1,9 @@
 """One-off: build cleaned reference + monthly drift batches from real Lending Club data.
 Run once after downloading data/raw/accepted_2007_to_2018Q4.csv.gz."""
 import pandas as pd
-from data.preprocess_lending_club import load_and_preprocess
+
 from data.build_batches import write_datasets
+from data.preprocess_lending_club import load_and_preprocess
 
 RAW = "data/raw/accepted_2007_to_2018Q4.csv.gz"
 
