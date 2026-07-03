@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from configs.logging_config import get_logger
 from configs.settings import settings
+from serving.dashboard_api import router as dashboard_router
 from serving.model_loader import ChampionModel, load_champion
 from serving.schemas import CreditApplication, HealthResponse, PredictionResponse
 
@@ -26,6 +27,8 @@ app.add_middleware(
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
+
+app.include_router(dashboard_router)
 
 _champion: ChampionModel | None = None
 _loaded = False

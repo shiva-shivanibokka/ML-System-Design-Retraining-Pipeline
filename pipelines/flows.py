@@ -224,6 +224,21 @@ def task_run_drift(
     )
     report_dict = report.to_dict()
 
+    # Best-effort: persist the drift report as a run artifact for the dashboard.
+    try:
+        import json
+
+        import mlflow
+
+        from configs.paths import temp_file
+
+        if mlflow.active_run() is not None:
+            p = temp_file(prefix="drift_", suffix=".json")
+            p.write_text(json.dumps(report_dict))
+            mlflow.log_artifact(str(p), artifact_path="drift")
+    except Exception as e:
+        logger.warning("Could not log drift artifact: %s", e)
+
     logger.info(
         f"Drift: KS={report.n_features_ks_drifted} features | "
         f"PSI={report.n_features_psi_drifted} features | "
