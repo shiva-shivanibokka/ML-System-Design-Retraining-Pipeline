@@ -1,4 +1,6 @@
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
+
+import pytest
 
 import alerting.llm_analyst as la
 
@@ -14,29 +16,23 @@ _DRIFT = {
 }
 
 
-def test_returns_none_without_api_key(monkeypatch):
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    assert la.summarize_drift(_DRIFT) is None
+def test_dispatches_to_provider_with_prompt_and_key():
+    with patch.object(la, "generate", return_value="Credit score drifted; economic shift.") as g:
+        out = la.summarize_drift(
+            _DRIFT, provider="groq", model="llama-3.3-70b-versatile", api_key="sk-user"
+        )
+    assert out == "Credit score drifted; economic shift."
+    provider, model, prompt, key = g.call_args.args
+    assert provider == "groq"
+    assert model == "llama-3.3-70b-versatile"
+    assert key == "sk-user"
+    # the prompt must mention the drifted features
+    assert "credit_score" in prompt
 
 
-def test_returns_text_with_mocked_client(monkeypatch):
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
-    fake_msg = MagicMock()
-    fake_msg.content = [MagicMock(text="Credit score and DTI drifted; likely an economic shift.")]
-    fake_client = MagicMock()
-    fake_client.messages.create.return_value = fake_msg
-    with patch.object(la, "_get_client", return_value=fake_client):
-        out = la.summarize_drift(_DRIFT)
-    assert out is not None and "drift" in out.lower() or "shift" in out.lower()
-    # prompt should mention the drifted features
-    sent = fake_client.messages.create.call_args.kwargs
-    prompt_text = str(sent)
-    assert "credit_score" in prompt_text
-
-
-def test_returns_none_on_api_error(monkeypatch):
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
-    fake_client = MagicMock()
-    fake_client.messages.create.side_effect = RuntimeError("boom")
-    with patch.object(la, "_get_client", return_value=fake_client):
-        assert la.summarize_drift(_DRIFT) is None
+def test_propagates_provider_error():
+    with patch.object(la, "generate", side_effect=RuntimeError("boom")):
+        with pytest.raises(RuntimeError):
+            la.summarize_drift(
+                _DRIFT, provider="groq", model="llama-3.3-70b-versatile", api_key="sk-user"
+            )

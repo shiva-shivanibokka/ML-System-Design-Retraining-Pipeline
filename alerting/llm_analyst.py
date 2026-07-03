@@ -1,32 +1,18 @@
-"""LLM drift analyst — narrates a drift event in plain English (Claude).
+"""LLM drift analyst — narrates a drift event in plain English (BYOK).
 
-Graceful degradation: if ANTHROPIC_API_KEY is unset or the call fails,
-returns None and the pipeline continues. Mirrors the Slack alerter pattern.
+Multi-provider and bring-your-own-key: the API key and provider/model are
+supplied per call by the caller (typically the frontend, forwarded through the
+serving API). Nothing is read from the environment. Dispatch to the chosen
+provider happens in ``alerting.llm_providers``.
 """
 from __future__ import annotations
 
 import json
-import os
 
+from alerting.llm_providers import generate
 from configs.logging_config import get_logger
 
 logger = get_logger(__name__)
-
-# Cheap, fast model for short narrative summaries.
-_MODEL = "claude-haiku-4-5-20251001"
-
-
-def _get_client():
-    """Return an Anthropic client, or None if unavailable."""
-    if not os.getenv("ANTHROPIC_API_KEY"):
-        return None
-    try:
-        import anthropic
-
-        return anthropic.Anthropic()
-    except Exception as e:  # SDK missing / init failure
-        logger.warning("Anthropic client unavailable: %s", e)
-        return None
 
 
 def _build_prompt(drift_report: dict, model_card: dict | None) -> str:
@@ -55,20 +41,18 @@ def _build_prompt(drift_report: dict, model_card: dict | None) -> str:
     )
 
 
-def summarize_drift(drift_report: dict, model_card: dict | None = None) -> "str | None":
-    """Return a short plain-English drift narrative, or None on any failure."""
-    client = _get_client()
-    if client is None:
-        return None
-    try:
-        msg = client.messages.create(
-            model=_MODEL,
-            max_tokens=300,
-            messages=[{"role": "user", "content": _build_prompt(drift_report, model_card)}],
-        )
-        parts = [getattr(b, "text", "") for b in msg.content]
-        text = "".join(parts).strip()
-        return text or None
-    except Exception as e:
-        logger.warning("Drift narrative generation failed: %s", e)
-        return None
+def summarize_drift(
+    drift_report: dict,
+    *,
+    provider: str,
+    model: str,
+    api_key: str,
+    model_card: dict | None = None,
+) -> str:
+    """Return a short plain-English drift narrative using the given provider/model/key.
+
+    Raises on an unknown provider/model (from ``generate``) or any provider-SDK
+    error; the serving endpoint maps those to HTTP status codes.
+    """
+    prompt = _build_prompt(drift_report, model_card)
+    return generate(provider, model, prompt, api_key)

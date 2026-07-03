@@ -40,7 +40,7 @@ Exact model IDs are re-verified at implementation time (Anthropic via the `claud
 | `groq` | free | `llama-3.3-70b-versatile` | `llama-3.1-8b-instant` | `groq` |
 | `gemini` | free tier | `gemini-2.0-flash` | `gemini-1.5-pro` | `google-generativeai` |
 | `openai` | paid | `gpt-4o-mini` | `gpt-4o` | `openai` |
-| `anthropic` | paid | `claude-haiku-4-5` | `claude-sonnet-4-5` | `anthropic` (already present) |
+| `anthropic` | paid | `claude-haiku-4-5` | `claude-sonnet-5` | `anthropic` (already present) |
 
 ## Architecture
 
