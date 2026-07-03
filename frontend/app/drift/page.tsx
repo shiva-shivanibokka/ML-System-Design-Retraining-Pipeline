@@ -84,12 +84,14 @@ export default async function DriftPage() {
             <div className="empty-state">No per-feature drift results in this report.</div>
           )}
 
-          <h2>Explain This Drift With AI</h2>
+          <h2>AI Drift Analysis</h2>
           {report.narrative ? (
-            <div className="card">{report.narrative}</div>
+            <div className="card" style={{ borderLeft: "4px solid var(--accent)" }}>
+              {report.narrative}
+            </div>
           ) : (
             <div className="empty-state">
-              AI narrative not available yet (wired up in a later milestone).
+              AI analysis unavailable (no narrative was generated for this drift report).
             </div>
           )}
         </>
