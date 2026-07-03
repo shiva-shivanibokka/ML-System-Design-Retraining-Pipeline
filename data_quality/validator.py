@@ -28,6 +28,7 @@ Fallback:
 
 from __future__ import annotations
 
+import logging
 import warnings
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -37,6 +38,8 @@ from typing import Dict, List, Optional, Tuple
 import pandas as pd
 
 from configs.settings import settings
+
+logger = logging.getLogger(__name__)
 
 # Optional Great Expectations import
 try:
@@ -133,7 +136,11 @@ class DataQualityValidator:
         )
 
         if GE_AVAILABLE:
-            self._run_ge_checks(df, result)
+            try:
+                self._run_ge_checks(df, result)
+            except Exception as e:
+                logger.warning("GE checks unavailable, falling back to pandas: %s", e)
+                self._run_pandas_checks(df, result)
         else:
             self._run_pandas_checks(df, result)
 
@@ -144,101 +151,91 @@ class DataQualityValidator:
     # -----------------------------------------------------------------------
 
     def _run_ge_checks(self, df: pd.DataFrame, result: ValidationResult) -> None:
-        """Run checks using Great Expectations Fluent API (GE >= 0.17)."""
-        try:
-            context = gx.get_context(mode="ephemeral")
-            data_source = context.sources.add_pandas("batch_source")
-            asset = data_source.add_dataframe_asset("batch")
-            batch_request = asset.build_batch_request(dataframe=df)
+        """Run checks using Great Expectations Fluent API (GE >= 0.17).
 
-            suite = context.add_expectation_suite(
-                expectation_suite_name="credit_risk_suite"
-            )
-            validator = context.get_validator(
-                batch_request=batch_request,
-                expectation_suite_name="credit_risk_suite",
+        Either completes the GE checks or raises — callers are responsible
+        for catching failures and falling back to the pandas implementation.
+        """
+        context = gx.get_context(mode="ephemeral")
+        data_source = context.sources.add_pandas("batch_source")
+        asset = data_source.add_dataframe_asset("batch")
+        batch_request = asset.build_batch_request(dataframe=df)
+
+        suite = context.add_expectation_suite(
+            expectation_suite_name="credit_risk_suite"
+        )
+        validator = context.get_validator(
+            batch_request=batch_request,
+            expectation_suite_name="credit_risk_suite",
+        )
+
+        # Row count
+        validator.expect_table_row_count_to_be_between(
+            min_value=self.cfg.min_row_count,
+            max_value=self.cfg.max_row_count,
+        )
+
+        # Column presence
+        all_cols = (
+            self.dataset_cfg.feature_columns["numeric"]
+            + self.dataset_cfg.feature_columns["categorical"]
+            + [self.dataset_cfg.target_column]
+        )
+        for col in all_cols:
+            validator.expect_column_to_exist(col)
+
+        # Null rates
+        for col in all_cols:
+            validator.expect_column_values_to_not_be_null(
+                column=col,
+                mostly=1.0 - self.cfg.max_null_rate,
             )
 
-            # Row count
-            validator.expect_table_row_count_to_be_between(
-                min_value=self.cfg.min_row_count,
-                max_value=self.cfg.max_row_count,
-            )
-
-            # Column presence
-            all_cols = (
-                self.dataset_cfg.feature_columns["numeric"]
-                + self.dataset_cfg.feature_columns["categorical"]
-                + [self.dataset_cfg.target_column]
-            )
-            for col in all_cols:
-                validator.expect_column_to_exist(col)
-
-            # Null rates
-            for col in all_cols:
-                validator.expect_column_values_to_not_be_null(
+        # Numeric ranges
+        for col, (lo, hi) in self.cfg.numeric_range_checks.items():
+            if col in df.columns:
+                validator.expect_column_values_to_be_between(
                     column=col,
-                    mostly=1.0 - self.cfg.max_null_rate,
+                    min_value=lo,
+                    max_value=hi,
+                    mostly=0.99,
                 )
 
-            # Numeric ranges
-            for col, (lo, hi) in self.cfg.numeric_range_checks.items():
-                if col in df.columns:
-                    validator.expect_column_values_to_be_between(
-                        column=col,
-                        min_value=lo,
-                        max_value=hi,
-                        mostly=0.99,
-                    )
-
-            # Categorical values
-            for col, valid_vals in self.cfg.categorical_value_checks.items():
-                if col in df.columns:
-                    validator.expect_column_values_to_be_in_set(
-                        column=col,
-                        value_set=set(valid_vals),
-                        mostly=0.99,
-                    )
-
-            # Target column: binary 0/1
-            if self.dataset_cfg.target_column in df.columns:
+        # Categorical values
+        for col, valid_vals in self.cfg.categorical_value_checks.items():
+            if col in df.columns:
                 validator.expect_column_values_to_be_in_set(
-                    column=self.dataset_cfg.target_column,
-                    value_set={0, 1},
+                    column=col,
+                    value_set=set(valid_vals),
+                    mostly=0.99,
                 )
 
-            ge_result = validator.validate()
-
-            # Translate GE results into our CheckResult objects
-            for exp_result in ge_result.results:
-                expectation_type = exp_result.expectation_config.expectation_type
-                passed = bool(exp_result.success)
-                observed = exp_result.result.get("observed_value", "N/A")
-                check = CheckResult(
-                    name=expectation_type,
-                    passed=passed,
-                    observed_value=observed,
-                    expected_value=exp_result.expectation_config.kwargs,
-                    message=(
-                        f"{expectation_type}: observed={observed}"
-                        if not passed
-                        else f"{expectation_type}: OK"
-                    ),
-                )
-                result.add_check(check)
-
-        except Exception as e:
-            # GE check itself failed — fall back to pandas
-            result.add_check(
-                CheckResult(
-                    name="ge_execution",
-                    passed=False,
-                    observed_value=str(e),
-                    expected_value="GE runs without error",
-                    message=f"GE execution failed: {e} — running pandas fallback",
-                )
+        # Target column: binary 0/1
+        if self.dataset_cfg.target_column in df.columns:
+            validator.expect_column_values_to_be_in_set(
+                column=self.dataset_cfg.target_column,
+                value_set={0, 1},
             )
-            self._run_pandas_checks(df, result)
+
+        ge_result = validator.validate()
+
+        # Translate GE results into our CheckResult objects
+        for exp_result in ge_result.results:
+            expectation_type = exp_result.expectation_config.expectation_type
+            passed = bool(exp_result.success)
+            observed = exp_result.result.get("observed_value", "N/A")
+            check = CheckResult(
+                name=expectation_type,
+                passed=passed,
+                observed_value=observed,
+                expected_value=exp_result.expectation_config.kwargs,
+                message=(
+                    f"{expectation_type}: observed={observed}"
+                    if not passed
+                    else f"{expectation_type}: OK"
+                ),
+            )
+            result.add_check(check)
 
     # -----------------------------------------------------------------------
     # Pandas fallback implementation
