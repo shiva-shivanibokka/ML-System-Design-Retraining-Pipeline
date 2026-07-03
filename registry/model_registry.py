@@ -46,6 +46,29 @@ from validation.validator import ValidationDecision
 logger = get_logger(__name__)
 
 
+def _is_alias_absent_error(exc: Exception) -> bool:
+    """True when a get-by-alias call failed because the champion alias / model
+    doesn't exist yet (the server responded), rather than the registry being
+    unreachable. A connectivity failure carries no MLflow ``error_code``, so it
+    won't match here and the caller re-raises. DagsHub's MLflow returns
+    ``INVALID_PARAMETER_VALUE`` for a missing alias where OSS MLflow returns
+    ``RESOURCE_DOES_NOT_EXIST`` — accept both.
+    """
+    code = getattr(exc, "error_code", "") or ""
+    if code in ("RESOURCE_DOES_NOT_EXIST", "RESOURCE_NOT_FOUND", "INVALID_PARAMETER_VALUE"):
+        return True
+    msg = str(exc).lower()
+    return any(
+        s in msg
+        for s in (
+            "resource_does_not_exist",
+            "invalid_parameter_value",
+            "not found",
+            "does not exist",
+        )
+    )
+
+
 @dataclass
 class RegistryEntry:
     """Info about a model version in the MLflow registry."""
@@ -118,7 +141,9 @@ class ModelRegistry:
         carry the `champion` alias *is* the challenger. Called after training
         completes, before validation gates run.
         """
-        model_uri = f"runs:/{result.run_id}/model"
+        # Prefer the canonical model URI captured at log time (MLflow 3
+        # logged-model URI); fall back to the legacy runs:/ form only if absent.
+        model_uri = result.model_uri or f"runs:/{result.run_id}/model"
 
         try:
             mv = mlflow.register_model(
@@ -259,12 +284,11 @@ class ModelRegistry:
             )
         except Exception as e:
             # Distinguish "no champion" (return None) from "unreachable" (raise).
-            if "RESOURCE_DOES_NOT_EXIST" in str(e) or "not found" in str(e).lower():
+            if _is_alias_absent_error(e):
                 logger.info(
                     "No champion alias set yet for %s — first run.",
                     self.cfg.model_name,
                 )
-                logger.info("No champion model registered — this is the first run.")
                 return None
             logger.error("MLflow registry unreachable while loading champion: %s", e)
             raise
@@ -310,7 +334,7 @@ class ModelRegistry:
                 self.cfg.model_name, champion_alias
             )
         except Exception as e:
-            if "RESOURCE_DOES_NOT_EXIST" in str(e) or "not found" in str(e).lower():
+            if _is_alias_absent_error(e):
                 return None
             raise
 

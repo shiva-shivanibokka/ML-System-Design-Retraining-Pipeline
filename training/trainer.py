@@ -117,6 +117,7 @@ class TrainingResult:
     optuna_n_trials: int
     label_encoders: Dict[str, LabelEncoder]
     feature_names: List[str]
+    model_uri: str = ""  # canonical MLflow model URI for registry.register_challenger
 
 
 # ---------------------------------------------------------------------------
@@ -422,8 +423,11 @@ class CreditRiskTrainer:
                 booster, X_test, run_id
             )
 
-            # 8. Log model to MLflow
-            mlflow.lightgbm.log_model(
+            # 8. Log model to MLflow. Capture the returned ModelInfo — its
+            # model_uri is the canonical reference the registry must use to
+            # register this version (MLflow 3 logged-model URI; reconstructing
+            # runs:/<run>/model fails to resolve on DagsHub's MLflow 3).
+            model_info = mlflow.lightgbm.log_model(
                 booster,
                 artifact_path="model",
                 registered_model_name=None,  # registry handled separately
@@ -455,6 +459,7 @@ class CreditRiskTrainer:
             optuna_n_trials=n_trials,
             label_encoders=label_encoders,
             feature_names=feature_names,
+            model_uri=model_info.model_uri,
         )
 
     def _run_optuna(
