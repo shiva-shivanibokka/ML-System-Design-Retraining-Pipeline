@@ -1,0 +1,33 @@
+name: Deploy serving API to HF Spaces
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "serving/**"
+      - "training/**"
+      - "registry/**"
+      - "validation/**"
+      - "drift/**"
+      - "data_quality/**"
+      - "configs/**"
+      - "alerting/**"
+      - "requirements.txt"
+
+jobs:
+  deploy-space:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Push to Hugging Face Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_SPACE_ID: ${{ secrets.HF_SPACE_ID }}
+        run: |
+          if [ -z "${HF_TOKEN}" ] || [ -z "${HF_SPACE_ID}" ]; then
+            echo "HF secrets not set; skipping deploy."; exit 0
+          fi
+          git config --global user.email "ci@example.com"
+          git config --global user.name "CI"
+          bash deploy/deploy_hf_space.sh

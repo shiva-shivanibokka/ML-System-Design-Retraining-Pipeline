@@ -227,6 +227,48 @@ export SLACK_WEBHOOK_URL="https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
 
 ---
 
+## Deployment (100% free tier)
+
+| Layer | Platform | Notes |
+|---|---|---|
+| Frontend | **Vercel** (Hobby) | Import the repo, set **Root Directory = `frontend`**, add `NEXT_PUBLIC_API_URL` = the HF Space URL. Vercel auto-detects Next.js. |
+| Serving API | **Hugging Face Docker Space** | Push `serving/Dockerfile` + app code; container listens on port **7860**. |
+| MLflow tracking + registry | **DagsHub** (hosted MLflow) | Also stores artifacts (encoders, model cards, drift reports). |
+| Data versioning | **DVC** on the DagsHub S3 remote | `dvc pull` in CI / the Space. |
+| CI + scheduled retrain + Space deploy | **GitHub Actions** | `ci.yml`, `retrain.yml` (nightly), `deploy-space.yml`. |
+
+### DagsHub MLflow auth
+
+Set these as GitHub repo secrets **and** as HF Space secrets (Settings → Secrets):
+
+```
+MLFLOW_TRACKING_URI=https://dagshub.com/<user>/<repo>.mlflow
+MLFLOW_TRACKING_USERNAME=<user>
+MLFLOW_TRACKING_PASSWORD=<DagsHub token>
+DAGSHUB_TOKEN=<DagsHub token>   # also used as the DVC S3 access/secret key
+```
+
+The `MLFLOW_TRACKING_URI` env override already exists in `configs/settings.py` — no code change needed to point the pipeline, serving API, and dashboard endpoints at DagsHub.
+
+### Deploy the serving API to a Hugging Face Space
+
+1. Create a **Docker** Space named `credit-risk-model-api`.
+2. Add GitHub repo secrets `HF_TOKEN` (a write token) and `HF_SPACE_ID` (e.g. `your-user/credit-risk-model-api`).
+3. In the Space's **Settings → Secrets**, set `MLFLOW_TRACKING_URI` / `MLFLOW_TRACKING_USERNAME` / `MLFLOW_TRACKING_PASSWORD`, `FRONTEND_ORIGINS` (your Vercel URL), and optionally `ANTHROPIC_API_KEY` / `SLACK_WEBHOOK_URL`.
+4. Push: the `deploy-space.yml` workflow syncs the app on every change to the serving code, or run `bash deploy/deploy_hf_space.sh` locally (needs `HF_TOKEN` + `HF_SPACE_ID` in your env).
+
+The Space's public URL is `https://<user>-credit-risk-model-api.hf.space`; `/docs` serves the Swagger UI.
+
+### Live demo
+
+| Resource | URL |
+|---|---|
+| Frontend (Vercel) | _<add after deploy>_ |
+| Serving API (HF Space `/docs`) | _<add after deploy>_ |
+| MLflow (DagsHub) | _<add after deploy>_ |
+
+---
+
 ## Interview Talking Points
 
 **"How do you know when to retrain?"**

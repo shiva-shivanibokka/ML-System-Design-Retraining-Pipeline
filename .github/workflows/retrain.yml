@@ -1,0 +1,56 @@
+name: Scheduled retraining
+
+# Nightly retrain against the DVC-tracked Lending Club batches on DagsHub.
+# The whole job is a no-op unless the DagsHub MLflow secret is configured, so
+# forks without secrets don't fail. Runs `--flow full`, which drift-checks the
+# latest real batch and retrains + validates + promotes only if drift triggers.
+
+on:
+  schedule:
+    - cron: "0 3 * * *" # 03:00 UTC nightly
+  workflow_dispatch:
+
+jobs:
+  retrain:
+    runs-on: ubuntu-latest
+    env:
+      MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI }}
+      MLFLOW_TRACKING_USERNAME: ${{ secrets.MLFLOW_TRACKING_USERNAME }}
+      MLFLOW_TRACKING_PASSWORD: ${{ secrets.MLFLOW_TRACKING_PASSWORD }}
+      # DagsHub DVC (S3-compatible) uses the token as both access + secret key.
+      AWS_ACCESS_KEY_ID: ${{ secrets.DAGSHUB_TOKEN }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.DAGSHUB_TOKEN }}
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+    steps:
+      - name: Check secrets are configured
+        id: guard
+        run: echo "ok=${{ secrets.MLFLOW_TRACKING_URI != '' }}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        if: steps.guard.outputs.ok == 'true'
+
+      - uses: actions/setup-python@v5
+        if: steps.guard.outputs.ok == 'true'
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        if: steps.guard.outputs.ok == 'true'
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+
+      - name: Pull DVC-tracked datasets from DagsHub
+        if: steps.guard.outputs.ok == 'true'
+        run: dvc pull -v
+
+      - name: Run retraining pipeline on the latest real batch
+        if: steps.guard.outputs.ok == 'true'
+        run: python pipelines/flows.py --flow full
+
+      - name: Report skip
+        if: steps.guard.outputs.ok != 'true'
+        run: echo "DagsHub MLflow secrets not set; skipping scheduled retrain."
