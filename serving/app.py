@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import os
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from configs.logging_config import get_logger
@@ -21,7 +21,13 @@ app = FastAPI(
     version="1.0.0",
 )
 
-_origins = [o for o in os.getenv("FRONTEND_ORIGINS", "*").split(",") if o]
+_frontend_origins = os.getenv("FRONTEND_ORIGINS")
+if not _frontend_origins:
+    logger.warning(
+        "FRONTEND_ORIGINS not set — allowing ALL origins for CORS. Set it to the "
+        "frontend URL in production to lock down cross-origin access."
+    )
+_origins = [o for o in (_frontend_origins or "*").split(",") if o]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_origins or ["*"],
@@ -33,24 +39,38 @@ app.include_router(dashboard_router)
 app.include_router(explain_router)
 
 _champion: ChampionModel | None = None
-_loaded = False
 
 
 def _get_champion() -> ChampionModel | None:
-    global _champion, _loaded
-    if _champion is not None:
-        return _champion
-    if not _loaded:
+    global _champion
+    # Retry the load on every call until it succeeds. A transient MLflow/DagsHub
+    # outage on the first request must NOT permanently disable the champion for
+    # the process lifetime (the old code cached None forever).
+    if _champion is None:
         _champion = load_champion()
-        _loaded = True
     return _champion
 
 
 def reload_champion() -> ChampionModel | None:
-    global _champion, _loaded
+    global _champion
     _champion = load_champion()
-    _loaded = True
     return _champion
+
+
+@app.post("/admin/reload-champion")
+def admin_reload_champion(
+    x_admin_token: str | None = Header(default=None, alias="X-Admin-Token"),
+) -> dict:
+    """Force a champion refresh (e.g. after a retrain). Guarded by ADMIN_TOKEN
+    when that env var is set; open otherwise (demo)."""
+    expected = os.getenv("ADMIN_TOKEN")
+    if expected and x_admin_token != expected:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    champ = reload_champion()
+    return {
+        "champion_loaded": champ is not None,
+        "model_version": champ.version if champ else None,
+    }
 
 
 @app.get("/health", response_model=HealthResponse)

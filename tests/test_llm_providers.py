@@ -69,17 +69,22 @@ def test_groq_adapter(monkeypatch):
 
 
 def test_gemini_adapter(monkeypatch):
-    fake_model = MagicMock()
-    fake_model.generate_content.return_value = MagicMock(text="Gemini narrative.")
+    # New google-genai SDK: per-request Client(api_key=...).
+    fake_client = MagicMock()
+    fake_client.models.generate_content.return_value = MagicMock(text="Gemini narrative.")
+    fake_types = types.SimpleNamespace(GenerateContentConfig=MagicMock())
     fake_genai = types.SimpleNamespace(
-        configure=MagicMock(),
-        GenerativeModel=MagicMock(return_value=fake_model),
+        Client=MagicMock(return_value=fake_client), types=fake_types
     )
     google_mod = types.ModuleType("google")
-    google_mod.generativeai = fake_genai  # type: ignore[attr-defined]
+    google_mod.genai = fake_genai  # type: ignore[attr-defined]
+    genai_mod = types.ModuleType("google.genai")
+    genai_mod.types = fake_types  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, "google", google_mod)
-    monkeypatch.setitem(sys.modules, "google.generativeai", fake_genai)
+    monkeypatch.setitem(sys.modules, "google.genai", fake_genai)
+    monkeypatch.setitem(sys.modules, "google.genai.types", fake_types)
 
     out = lp.generate("gemini", "gemini-2.0-flash", "why?", "sk-user")
     assert out == "Gemini narrative."
-    fake_genai.configure.assert_called_once_with(api_key="sk-user")
+    # key passed per-request to a fresh client, not a global configure()
+    fake_genai.Client.assert_called_once_with(api_key="sk-user")

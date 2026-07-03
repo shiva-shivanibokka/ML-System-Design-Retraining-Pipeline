@@ -25,11 +25,9 @@ def test_reference_is_earliest_period_and_batches_follow():
 def test_write_datasets_writes_reference_and_batch_files(tmp_path):
     ref_dir = tmp_path / "reference"
     processed_dir = tmp_path / "processed"
-    raw_dir = tmp_path / "raw"
 
     write_datasets(
         _frame(),
-        out_raw=str(raw_dir),
         ref_dir=str(ref_dir),
         processed_dir=str(processed_dir),
         reference_months=2,

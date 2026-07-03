@@ -63,11 +63,19 @@ def _call_groq(model: str, prompt: str, api_key: str) -> str:
 
 
 def _call_gemini(model: str, prompt: str, api_key: str) -> str:
-    import google.generativeai as genai
+    # Per-request client — the key stays local to this call. The older
+    # google-generativeai SDK only had a process-global genai.configure(), which
+    # both persisted the key in module state and raced across concurrent BYOK
+    # requests; google-genai's Client(api_key=...) is isolated per call.
+    from google import genai
+    from google.genai import types
 
-    genai.configure(api_key=api_key)
-    gm = genai.GenerativeModel(model)
-    resp = gm.generate_content(prompt)
+    client = genai.Client(api_key=api_key)
+    resp = client.models.generate_content(
+        model=model,
+        contents=prompt,
+        config=types.GenerateContentConfig(max_output_tokens=_MAX_TOKENS),
+    )
     return (getattr(resp, "text", "") or "").strip()
 
 

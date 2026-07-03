@@ -1,4 +1,5 @@
 # tests/test_preprocess_lending_club.py
+import math
 from pathlib import Path
 
 import pandas as pd
@@ -62,3 +63,17 @@ def test_preprocess_retains_policy_exception_statuses():
 def test_load_and_preprocess_smoke():
     out = load_and_preprocess(str(FIX))
     assert len(out) >= 1 and "default" in out.columns
+
+
+def test_parse_term_returns_nan_on_malformed():
+    """M8: malformed/blank term must coerce to NaN (row dropped), not crash."""
+    assert math.isnan(_parse_term(""))
+    assert math.isnan(_parse_term(float("nan")))
+    assert math.isnan(_parse_term("   "))
+
+
+def test_strip_pct_returns_nan_on_junk():
+    """M8: non-numeric percent cells must coerce to NaN, not crash."""
+    assert math.isnan(_strip_pct("none"))
+    assert math.isnan(_strip_pct(""))
+    assert _strip_pct("13.56%") == 13.56

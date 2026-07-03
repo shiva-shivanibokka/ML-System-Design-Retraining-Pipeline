@@ -15,6 +15,7 @@ the same feature whitelist that already protects the rest of the pipeline.
 """
 from __future__ import annotations
 
+import warnings
 from pathlib import Path
 
 import pandas as pd
@@ -29,6 +30,13 @@ def split_temporal(
     become the reference frame. Each subsequent distinct year-month becomes
     one batch, labelled "YYYY-MM", in chronological order.
     """
+    n_missing = int(df["issue_d"].isna().sum())
+    if n_missing:
+        warnings.warn(
+            f"split_temporal: {n_missing} row(s) with missing issue_d will be "
+            "dropped (they belong to no reference or batch period).",
+            stacklevel=2,
+        )
     sorted_df = df.sort_values("issue_d").reset_index(drop=True)
     year_month = sorted_df["issue_d"].dt.to_period("M")
 
@@ -49,7 +57,6 @@ def split_temporal(
 
 def write_datasets(
     df: pd.DataFrame,
-    out_raw: str = "data/raw",
     ref_dir: str = "data/reference",
     processed_dir: str = "data/processed",
     reference_months: int = 12,
@@ -57,9 +64,6 @@ def write_datasets(
     """Split `df` and write the reference + monthly batch parquet files.
 
     Creates `ref_dir` and `processed_dir` if they don't already exist.
-    `out_raw` is accepted for interface symmetry with the rest of the
-    pipeline's raw/reference/processed directory layout but is not written
-    to here (the raw CSV is produced upstream by preprocess_lending_club).
     """
     reference_df, batches = split_temporal(df, reference_months=reference_months)
 

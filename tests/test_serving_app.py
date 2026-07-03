@@ -28,7 +28,6 @@ def _fake_champion():
 
 def setup_function(_):
     appmod._champion = _fake_champion()
-    appmod._loaded = True
 
 def test_health_ok():
     r = TestClient(appmod.app).get("/health")
@@ -52,3 +51,18 @@ def test_predict_validation_error_returns_422():
     bad["credit_score"] = 99999
     r = TestClient(appmod.app).post("/predict", json=bad)
     assert r.status_code == 422
+
+
+def test_champion_load_is_retried_after_transient_failure(monkeypatch):
+    """M1: a transient None load must NOT be cached permanently — a later call
+    retries and picks up the champion once it's available."""
+    appmod._champion = None
+    calls = {"n": 0}
+
+    def flaky_load():
+        calls["n"] += 1
+        return None if calls["n"] == 1 else _fake_champion()
+
+    monkeypatch.setattr(appmod, "load_champion", flaky_load)
+    assert appmod._get_champion() is None  # first call: transient failure
+    assert appmod._get_champion() is not None  # retried, now loaded

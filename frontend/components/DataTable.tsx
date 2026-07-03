@@ -23,7 +23,7 @@ export default function DataTable({
         </thead>
         <tbody>
           {rows.map((row, i) => (
-            <tr key={i}>
+            <tr key={String(row.run_id ?? i)}>
               {columns.map((c) => (
                 <td key={c}>{row[c] === null || row[c] === undefined ? "—" : String(row[c])}</td>
               ))}

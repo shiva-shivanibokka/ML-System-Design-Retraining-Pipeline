@@ -1,6 +1,8 @@
 import { api, type Run } from "@/lib/api";
 import StatCard from "@/components/StatCard";
 import PredictForm from "@/components/PredictForm";
+import Sparkline from "@/components/Sparkline";
+import { formatStartTime, fmtNum } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
@@ -10,35 +12,8 @@ function parseChampionAuc(description: string | null | undefined, runs: Run[]): 
     if (auc) return auc;
   }
   const withAuc = runs.find((r) => typeof r["metrics.auc"] === "number");
-  if (withAuc) return Number(withAuc["metrics.auc"]).toFixed(4);
+  if (withAuc) return fmtNum(Number(withAuc["metrics.auc"]));
   return "N/A";
-}
-
-function formatStartTime(value: unknown): string {
-  if (typeof value !== "number") return "—";
-  const d = new Date(value);
-  return Number.isNaN(d.getTime()) ? "—" : d.toLocaleString();
-}
-
-function Sparkline({ values }: { values: number[] }) {
-  if (values.length < 2) return null;
-  const w = 320;
-  const h = 60;
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const range = max - min || 1;
-  const points = values
-    .map((v, i) => {
-      const x = (i / (values.length - 1)) * w;
-      const y = h - ((v - min) / range) * h;
-      return `${x.toFixed(1)},${y.toFixed(1)}`;
-    })
-    .join(" ");
-  return (
-    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} role="img" aria-label="AUC trend">
-      <polyline fill="none" stroke="#4f8cff" strokeWidth="2" points={points} />
-    </svg>
-  );
 }
 
 export default async function OverviewPage() {
@@ -74,7 +49,7 @@ export default async function OverviewPage() {
       <h2>AUC Trend (Recent Runs)</h2>
       {aucSeries.length >= 2 ? (
         <div className="card">
-          <Sparkline values={aucSeries} />
+          <Sparkline values={aucSeries} ariaLabel="AUC trend" />
         </div>
       ) : (
         <div className="empty-state">Not enough runs with AUC to plot a trend yet.</div>
@@ -102,13 +77,9 @@ export default async function OverviewPage() {
                   <td>{r.run_id.slice(0, 8)}</td>
                   <td>{String(r.status ?? "—")}</td>
                   <td>{formatStartTime(r.start_time)}</td>
-                  <td>{typeof r["metrics.auc"] === "number" ? Number(r["metrics.auc"]).toFixed(4) : "—"}</td>
-                  <td>
-                    {typeof r["metrics.ks_statistic"] === "number"
-                      ? Number(r["metrics.ks_statistic"]).toFixed(4)
-                      : "—"}
-                  </td>
-                  <td>{typeof r["metrics.gini"] === "number" ? Number(r["metrics.gini"]).toFixed(4) : "—"}</td>
+                  <td>{fmtNum(r["metrics.auc"])}</td>
+                  <td>{fmtNum(r["metrics.ks_statistic"])}</td>
+                  <td>{fmtNum(r["metrics.gini"])}</td>
                 </tr>
               ))}
             </tbody>

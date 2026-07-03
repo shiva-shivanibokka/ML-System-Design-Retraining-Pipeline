@@ -1,5 +1,10 @@
 # Audit Fix Plan — 2026-07-03
 
+> **STATUS: ALL APPLIED (2026-07-03).** Every task below (3 HIGH, 9 MED, 14 LOW)
+> has been implemented with regression tests where feasible. Verification:
+> `ruff` clean · 89 pytest tests pass · frontend `tsc --noEmit` + `next build`
+> green. See git history for the per-group commits.
+
 Derived from `AUDIT.md`. Tasks are ordered by priority. Each is independently applicable and verifiable. HIGH/MED carry exact changes; LOW are grouped. Nothing here has been applied yet (the 3 trivial-safe fixes in AUDIT.md were already applied separately).
 
 **Global verification after each task:** `python -m pytest -p no:warnings -q` (78 pass) and `ruff check .` clean; frontend tasks also `cd frontend && npm run typecheck && npm run build`.

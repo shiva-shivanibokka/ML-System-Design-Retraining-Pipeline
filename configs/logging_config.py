@@ -14,12 +14,19 @@ def setup_logging(level: str | None = None) -> None:
     global _CONFIGURED
     if _CONFIGURED:
         return
-    lvl = (level or os.getenv("LOG_LEVEL", "INFO")).upper()
-    handler = logging.StreamHandler(sys.stdout)
-    handler.setFormatter(logging.Formatter(_FORMAT))
+    lvl_name = (level or os.getenv("LOG_LEVEL", "INFO")).upper()
+    # An unknown LOG_LEVEL must not crash import of every module that logs.
+    lvl = getattr(logging, lvl_name, None)
+    if not isinstance(lvl, int):
+        lvl = logging.INFO
     root = logging.getLogger()
     root.setLevel(lvl)
-    root.addHandler(handler)
+    # Only attach our handler when root has none. Under uvicorn/gunicorn (which
+    # install their own root handler) adding another would emit every line twice.
+    if not root.handlers:
+        handler = logging.StreamHandler(sys.stdout)
+        handler.setFormatter(logging.Formatter(_FORMAT))
+        root.addHandler(handler)
     _CONFIGURED = True
 
 

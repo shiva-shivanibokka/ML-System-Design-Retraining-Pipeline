@@ -65,13 +65,27 @@ RAW_COLUMNS = list(COLUMN_MAP.keys()) + [
 ]
 
 
-def _parse_term(s) -> int:
-    """'36 months' / ' 60 months' -> 36 / 60."""
-    return int(str(s).strip().split()[0])
+def _parse_term(s):
+    """'36 months' / ' 60 months' -> 36 / 60.
+
+    A malformed/blank/NaN cell returns NaN so the row is dropped by the
+    downstream dropna, rather than aborting the entire dataset build.
+    """
+    try:
+        return int(str(s).strip().split()[0])
+    except (ValueError, IndexError):
+        return float("nan")
 
 
 def _parse_emp_length(s) -> int:
-    """'10+ years' -> 10, '< 1 year' -> 0, 'n/a' -> 0, '3 years' -> 3."""
+    """'10+ years' -> 10, '< 1 year' -> 0, 'n/a' -> 0, '3 years' -> 3.
+
+    NOTE (intentional modeling choice): unknown/missing tenure maps to 0. This
+    conflates "unknown" with a genuine 0-year borrower, but Lending Club's
+    emp_length is missing for a meaningful share of rows and dropping them would
+    discard too much data. Kept as 0-impute for train/serve consistency; revisit
+    with an explicit `emp_length_missing` flag feature if the bias matters.
+    """
     s = str(s).strip().lower()
     if s in ("n/a", "nan", ""):
         return 0
@@ -81,9 +95,12 @@ def _parse_emp_length(s) -> int:
     return int(digits) if digits else 0
 
 
-def _strip_pct(s) -> float:
-    """'13.56%' -> 13.56."""
-    return float(str(s).strip().rstrip("%"))
+def _strip_pct(s):
+    """'13.56%' -> 13.56. Non-numeric/blank/NaN -> NaN (row dropped downstream)."""
+    try:
+        return float(str(s).strip().rstrip("%"))
+    except (ValueError, TypeError):
+        return float("nan")
 
 
 def _map_default(status):

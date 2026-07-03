@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { api } from "@/lib/api";
+import { fmtNum, numOr0 } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
@@ -34,7 +35,7 @@ export default async function ModelCardsPage({
   const card = selectedId ? ((await api.modelCard(selectedId)) as ModelCard) : null;
 
   const featImp = card?.feature_importance_top10 ?? {};
-  const maxImp = Math.max(1e-9, ...Object.values(featImp).map((v) => Math.abs(v)));
+  const maxImp = Math.max(1e-9, ...Object.values(featImp).map((v) => Math.abs(numOr0(v))));
 
   return (
     <div>
@@ -94,10 +95,10 @@ export default async function ModelCardsPage({
                       <div className="bar-track">
                         <div
                           className="bar-fill"
-                          style={{ width: `${(Math.abs(value) / maxImp) * 100}%` }}
+                          style={{ width: `${(Math.abs(numOr0(value)) / maxImp) * 100}%` }}
                         />
                       </div>
-                      <span>{value.toFixed(4)}</span>
+                      <span>{fmtNum(value)}</span>
                     </div>
                   ))}
                 </div>

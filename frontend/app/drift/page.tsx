@@ -1,6 +1,7 @@
 import { api } from "@/lib/api";
 import StatCard from "@/components/StatCard";
 import DriftExplainer from "@/components/DriftExplainer";
+import { fmtNum } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
@@ -69,10 +70,10 @@ export default async function DriftPage() {
                 {(report.feature_results ?? []).map((r) => (
                   <tr key={r.feature}>
                     <td>{r.feature}</td>
-                    <td>{r.ks_statistic.toFixed(4)}</td>
-                    <td>{r.ks_pvalue.toFixed(4)}</td>
+                    <td>{fmtNum(r.ks_statistic)}</td>
+                    <td>{fmtNum(r.ks_pvalue)}</td>
                     <td>{r.ks_drifted ? <span className="badge badge-red">YES</span> : <span className="badge badge-green">No</span>}</td>
-                    <td>{r.psi_score.toFixed(4)}</td>
+                    <td>{fmtNum(r.psi_score)}</td>
                     <td>{psiBadge(r.psi_status)}</td>
                   </tr>
                 ))}
