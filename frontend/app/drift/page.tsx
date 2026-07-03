@@ -1,5 +1,6 @@
 import { api } from "@/lib/api";
 import StatCard from "@/components/StatCard";
+import DriftExplainer from "@/components/DriftExplainer";
 
 export const dynamic = "force-dynamic";
 
@@ -23,7 +24,6 @@ type DriftReport = {
   trigger_reasons?: string[];
   timestamp?: string;
   feature_results?: FeatureDriftResult[];
-  narrative?: string;
 };
 
 function psiBadge(status: string) {
@@ -85,15 +85,11 @@ export default async function DriftPage() {
           )}
 
           <h2>AI Drift Analysis</h2>
-          {report.narrative ? (
-            <div className="card" style={{ borderLeft: "4px solid var(--accent)" }}>
-              {report.narrative}
-            </div>
-          ) : (
-            <div className="empty-state">
-              AI analysis unavailable (no narrative was generated for this drift report).
-            </div>
-          )}
+          <p className="section-sub">
+            Bring your own key — pick a provider and generate a plain-English explanation of this
+            drift on demand.
+          </p>
+          <DriftExplainer report={report as Record<string, unknown>} />
         </>
       )}
     </div>

@@ -29,4 +29,26 @@ export const api = {
     if (!res.ok) throw new Error(`Predict failed: ${res.status}`);
     return res.json();
   },
+  explainDrift: async (args: {
+    provider: string;
+    model: string;
+    apiKey: string;
+    report: Record<string, unknown>;
+  }): Promise<{ narrative: string; provider: string; model: string }> => {
+    const res = await fetch(`${BASE}/drift/explain`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-LLM-Key": args.apiKey },
+      body: JSON.stringify({ provider: args.provider, model: args.model, drift_report: args.report }),
+    });
+    if (!res.ok) {
+      const detail =
+        res.status === 400
+          ? "Enter your API key."
+          : res.status === 422
+          ? "Unsupported provider or model."
+          : "Provider rejected the key or is unavailable — check the key and try again.";
+      throw new Error(detail);
+    }
+    return res.json();
+  },
 };
