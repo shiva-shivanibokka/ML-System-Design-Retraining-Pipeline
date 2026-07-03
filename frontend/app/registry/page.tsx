@@ -2,12 +2,10 @@ import { api } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
 
-type Version = { version: string | number; run_id: string; description?: string | null };
-
 export default async function RegistryPage() {
   const registry = await api.registry();
-  const champion = registry.by_alias.champion as Version | null;
-  const archived = (registry.by_alias.archived ?? []) as Version[];
+  const champion = registry.by_alias.champion;
+  const archived = registry.by_alias.archived ?? [];
 
   return (
     <div>

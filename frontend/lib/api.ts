@@ -13,7 +13,8 @@ async function get<T>(path: string, fallback: T): Promise<T> {
 
 export type Health = { status: string; champion_loaded: boolean; model_version: string | null };
 export type Run = Record<string, unknown> & { run_id: string; start_time?: number; "metrics.auc"?: number };
-export type Registry = { by_alias: { champion: any; archived: any[] }; total_versions: number };
+export type Version = { version: string | number; run_id: string; description?: string | null };
+export type Registry = { by_alias: { champion: Version | null; archived: Version[] }; total_versions: number };
 
 export const api = {
   health: () => get<Health>("/health", { status: "down", champion_loaded: false, model_version: null }),
