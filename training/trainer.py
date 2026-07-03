@@ -57,6 +57,7 @@ from sklearn.metrics import (
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 
+from configs.paths import utcnow_naive
 from configs.settings import settings
 
 # LightGBM
@@ -173,7 +174,7 @@ def compute_training_window(df: pd.DataFrame) -> Tuple[pd.DataFrame, int]:
     cfg = settings.training.training_window
 
     if cfg.strategy == "fixed":
-        cutoff = datetime.utcnow() - timedelta(days=cfg.fixed_days)
+        cutoff = utcnow_naive() - timedelta(days=cfg.fixed_days)
         if "batch_date" in df.columns:
             mask = pd.to_datetime(df["batch_date"]) >= cutoff
             subset = df[mask]
@@ -183,7 +184,7 @@ def compute_training_window(df: pd.DataFrame) -> Tuple[pd.DataFrame, int]:
 
     # Auto strategy: start from max_days and shrink until we have enough rows
     for n_days in range(cfg.auto_max_days, 1, -1):
-        cutoff = datetime.utcnow() - timedelta(days=n_days)
+        cutoff = utcnow_naive() - timedelta(days=n_days)
         if "batch_date" in df.columns:
             mask = pd.to_datetime(df["batch_date"]) >= cutoff
             subset = df[mask]
@@ -338,7 +339,7 @@ class CreditRiskTrainer:
         mlflow.set_experiment(self.mlflow_cfg.experiment_name)
 
         with mlflow.start_run(
-            run_name=f"retrain_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
+            run_name=f"retrain_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
         ) as run:
             run_id = run.info.run_id
 
@@ -579,7 +580,9 @@ class CreditRiskTrainer:
                     max_display=self.cfg.shap.max_display,
                     show=False,
                 )
-                plot_path = f"/tmp/shap_summary_{run_id[:8]}.png"
+                from configs.paths import temp_file
+
+                plot_path = str(temp_file(prefix=f"shap_summary_{run_id[:8]}_", suffix=".png"))
                 plt.savefig(plot_path, bbox_inches="tight", dpi=100)
                 plt.close()
                 mlflow.log_artifact(plot_path, artifact_path="shap")

@@ -154,7 +154,7 @@ def flow_ingest_and_validate(
         batch_date: ISO date string (defaults to today)
     """
     logger = get_run_logger()
-    batch_date = batch_date or datetime.utcnow().date().isoformat()
+    batch_date = batch_date or datetime.now(timezone.utc).date().isoformat()
     logger.info(f"Ingesting batch: {batch_path} | date: {batch_date}")
 
     df = pd.read_parquet(batch_path)
@@ -246,7 +246,7 @@ def flow_detect_drift(
         force_retrain: skip drift check and retrain unconditionally
     """
     logger = get_run_logger()
-    batch_date = batch_date or datetime.utcnow().date().isoformat()
+    batch_date = batch_date or datetime.now(timezone.utc).date().isoformat()
 
     # Load data
     reference = _load_reference_data()

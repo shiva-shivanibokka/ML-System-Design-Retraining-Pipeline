@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import tempfile
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -23,3 +24,9 @@ def temp_dir() -> Path:
 def temp_file(prefix: str = "", suffix: str = "") -> Path:
     """Return a unique path inside temp_dir() for a scratch file (not created)."""
     return temp_dir() / f"{prefix}{uuid.uuid4().hex}{suffix}"
+
+
+def utcnow_naive() -> datetime:
+    """Timezone-aware UTC 'now' with tzinfo stripped — safe to compare against
+    naive datetimes parsed from batch_date strings."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
