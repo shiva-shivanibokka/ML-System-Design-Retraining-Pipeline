@@ -38,7 +38,7 @@ export default function DriftExplainer({ report }: { report: Record<string, unkn
   }
 
   return (
-    <div className="card">
+    <div className="glass pad">
       <div className="explainer-controls">
         <div className="field">
           <label htmlFor="ai-provider">Provider</label>
@@ -87,7 +87,10 @@ export default function DriftExplainer({ report }: { report: Record<string, unkn
       </button>
 
       {narrative && (
-        <div className="card" style={{ borderLeft: "4px solid var(--accent)", marginTop: "1rem" }}>
+        <div
+          className="glass pad"
+          style={{ borderLeft: "4px solid transparent", borderImage: "var(--grad) 1", marginTop: "1rem" }}
+        >
           {narrative}
         </div>
       )}

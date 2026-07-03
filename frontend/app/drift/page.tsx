@@ -1,7 +1,8 @@
 import { api } from "@/lib/api";
-import StatCard from "@/components/StatCard";
 import DriftExplainer from "@/components/DriftExplainer";
-import { fmtNum } from "@/lib/format";
+import MetricTile from "@/components/MetricTile";
+import SectionHeader from "@/components/SectionHeader";
+import { fmtNum, numOr0 } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
@@ -26,70 +27,125 @@ type DriftReport = {
   feature_results?: FeatureDriftResult[];
 };
 
-function psiBadge(status: string) {
-  const cls = status === "critical" ? "badge-red" : status === "warning" ? "badge-yellow" : "badge-green";
-  return <span className={`badge ${cls}`}>{status}</span>;
+function psiPill(status: string) {
+  const cls = status === "critical" ? "pill-red" : status === "warning" ? "pill-amber" : "pill-green";
+  return <span className={`pill ${cls}`}>{status}</span>;
 }
 
 export default async function DriftPage() {
   const report = (await api.driftLatest()) as DriftReport | null;
 
+  const sortedFeatures = [...(report?.feature_results ?? [])].sort(
+    (a, b) => numOr0(b.ks_statistic) - numOr0(a.ks_statistic)
+  );
+
+  const ksDrifted = report?.n_features_ks_drifted ?? 0;
+  const psiCritical = report?.n_features_psi_drifted ?? 0;
+
   return (
-    <div>
-      <h1>Drift Monitor</h1>
-      <p className="section-sub">Per-feature KS/PSI drift signals from the most recent evaluated batch.</p>
+    <div className="stack">
+      <SectionHeader
+        eyebrow="Monitoring"
+        title="Drift Monitor"
+        sub="Per-feature KS/PSI drift signals from the most recent evaluated batch — the trigger behind every retrain."
+      />
 
       {!report ? (
         <div className="empty-state">No drift report available yet. Run the ingestion/drift flow first.</div>
       ) : (
         <>
-          <div className="grid">
-            <StatCard title="KS-Drifted Features" value={report.n_features_ks_drifted ?? 0} />
-            <StatCard title="PSI-Critical Features" value={report.n_features_psi_drifted ?? 0} />
-            <StatCard
-              title="Retrain Triggered"
-              value={report.retrain_triggered ? "YES" : "No"}
-              sub={report.batch_date ? `Batch: ${report.batch_date}` : undefined}
-            />
-          </div>
-
-          <h2>Per-Feature Drift</h2>
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Feature</th>
-                  <th>KS Statistic</th>
-                  <th>KS p-value</th>
-                  <th>KS Drifted</th>
-                  <th>PSI Score</th>
-                  <th>PSI Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(report.feature_results ?? []).map((r) => (
-                  <tr key={r.feature}>
-                    <td>{r.feature}</td>
-                    <td>{fmtNum(r.ks_statistic)}</td>
-                    <td>{fmtNum(r.ks_pvalue)}</td>
-                    <td>{r.ks_drifted ? <span className="badge badge-red">YES</span> : <span className="badge badge-green">No</span>}</td>
-                    <td>{fmtNum(r.psi_score)}</td>
-                    <td>{psiBadge(r.psi_status)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          {(report.feature_results ?? []).length === 0 && (
-            <div className="empty-state">No per-feature drift results in this report.</div>
+          {report.retrain_triggered && (
+            <div className="glass banner banner-red">
+              <b>Retrain triggered.</b>{" "}
+              {report.trigger_reasons?.join(" · ") || "Drift crossed the configured threshold."}
+            </div>
           )}
 
-          <h2>AI Drift Analysis</h2>
-          <p className="section-sub">
-            Bring your own key — pick a provider and generate a plain-English explanation of this
-            drift on demand.
-          </p>
-          <DriftExplainer report={report as Record<string, unknown>} />
+          <section>
+            <div className="grid">
+              <MetricTile
+                label="KS-Drifted Features"
+                value={ksDrifted}
+                tone={ksDrifted > 0 ? "red" : "green"}
+              />
+              <MetricTile
+                label="PSI-Critical Features"
+                value={psiCritical}
+                tone={psiCritical > 0 ? "red" : "green"}
+              />
+              <MetricTile
+                label="Retrain Triggered"
+                value={report.retrain_triggered ? "YES" : "No"}
+                sub={report.batch_date ? `Batch: ${report.batch_date}` : undefined}
+                tone={report.retrain_triggered ? "red" : "green"}
+              />
+            </div>
+          </section>
+
+          <section>
+            <SectionHeader
+              eyebrow="Detail"
+              title="Per-Feature Drift"
+              sub="Sorted by KS statistic, worst offenders first."
+            />
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Feature</th>
+                    <th>KS Statistic</th>
+                    <th>KS p-value</th>
+                    <th>KS Drifted</th>
+                    <th>PSI Score</th>
+                    <th>PSI Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedFeatures.map((r) => (
+                    <tr key={r.feature}>
+                      <td>{r.feature}</td>
+                      <td>
+                        <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", minWidth: "140px" }}>
+                          <span className="mono">{fmtNum(r.ks_statistic)}</span>
+                          <div className="bar-track" style={{ flex: 1 }}>
+                            <div
+                              className="bar-fill"
+                              style={{
+                                width: `${Math.min(1, numOr0(r.ks_statistic)) * 100}%`,
+                                background: r.ks_drifted ? "var(--red)" : "var(--accent)",
+                              }}
+                            />
+                          </div>
+                        </div>
+                      </td>
+                      <td>{fmtNum(r.ks_pvalue)}</td>
+                      <td>
+                        {r.ks_drifted ? (
+                          <span className="pill pill-red">YES</span>
+                        ) : (
+                          <span className="pill pill-green">No</span>
+                        )}
+                      </td>
+                      <td>{fmtNum(r.psi_score)}</td>
+                      <td>{psiPill(r.psi_status)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {sortedFeatures.length === 0 && (
+              <div className="empty-state">No per-feature drift results in this report.</div>
+            )}
+          </section>
+
+          <section>
+            <SectionHeader
+              eyebrow="AI Analyst"
+              title="AI Drift Analysis"
+              sub="Bring your own key — pick a provider and generate a plain-English explanation of this drift on demand."
+            />
+            <DriftExplainer report={report as Record<string, unknown>} />
+          </section>
         </>
       )}
     </div>
