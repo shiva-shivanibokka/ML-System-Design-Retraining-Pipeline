@@ -73,8 +73,7 @@ def runs(limit: int = 20):
         return []
     if df is None or df.empty:
         return []
-    if "tags.mlflow.parentRunId" in df.columns:
-        df = df[df["tags.mlflow.parentRunId"].isna()]
+    # Parent-run filtering already applied inside _search_runs().
     keep = [
         c
         for c in df.columns

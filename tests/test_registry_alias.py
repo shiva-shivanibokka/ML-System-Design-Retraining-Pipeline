@@ -65,3 +65,36 @@ def test_promote_challenger_reassigns_champion_alias_without_unset_window():
     ]
     assert len(archived_calls) == 1
     assert str(archived_calls[0].kwargs.get("version")) == "4"
+
+
+def test_promote_challenger_returns_false_and_compensates_on_alias_failure():
+    """H2: if the champion alias move fails after the old champion was archived,
+    promote_challenger must return False (not swallow to a false success) and
+    remove the stray archived alias so the old champion stays cleanly live."""
+    reg = ModelRegistry()
+    fake_client = MagicMock()
+
+    old_champion = MagicMock()
+    old_champion.version = "4"
+    challenger_version = MagicMock()
+    challenger_version.version = "5"
+    decision = MagicMock()
+    decision.challenger_auc = 0.85
+    decision.auc_delta = 0.01
+
+    def _set_alias(name=None, alias=None, version=None):
+        if alias == "champion":
+            raise RuntimeError("alias move failed")
+        return None
+
+    fake_client.set_registered_model_alias.side_effect = _set_alias
+
+    with patch.object(reg, "_client", fake_client, create=True), patch.object(
+        reg, "_get_champion", return_value=old_champion
+    ):
+        result = reg.promote_challenger(challenger_version, decision)
+
+    assert result is False
+    # Compensation: the stray archived-4 alias must be removed.
+    fake_client.delete_registered_model_alias.assert_called_once()
+    assert fake_client.delete_registered_model_alias.call_args.args[1] == "archived-4"

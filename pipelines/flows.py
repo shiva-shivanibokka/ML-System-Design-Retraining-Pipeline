@@ -295,9 +295,15 @@ def flow_detect_drift(
 
     current = pd.read_parquet(batch_file)
 
-    # Load current champion for prediction drift
+    # Load current champion for prediction drift. Drift detection does NOT need
+    # a champion (feature-drift KS/PSI is champion-independent), so a registry
+    # outage must not abort the whole flow — degrade to no prediction-drift.
     registry = ModelRegistry()
-    champion_model = registry.load_champion()
+    try:
+        champion_model = registry.load_champion()
+    except Exception as e:
+        logger.warning("Could not load champion for prediction drift: %s", e)
+        champion_model = None
 
     # Run drift detection
     report_dict = task_run_drift(reference, current, batch_date, champion_model)
@@ -305,11 +311,16 @@ def flow_detect_drift(
     triggered = report_dict.get("retrain_triggered", False) or force_retrain
 
     if triggered:
+        # Distinguish a real drift trigger from a manually forced retrain so the
+        # alert signal isn't polluted with empty trigger reasons.
+        reasons = report_dict.get("trigger_reasons", [])
+        if force_retrain and not report_dict.get("retrain_triggered", False):
+            reasons = ["Manual force_retrain (no drift detected)"]
         alerter.alert_drift_detected(
             batch_date=batch_date,
             n_ks_drifted=report_dict.get("n_features_ks_drifted", 0),
             n_psi_drifted=report_dict.get("n_features_psi_drifted", 0),
-            trigger_reasons=report_dict.get("trigger_reasons", []),
+            trigger_reasons=reasons,
             prediction_psi=(
                 report_dict.get("prediction_drift", {}).get("psi_score")
                 if report_dict.get("prediction_drift")
@@ -387,7 +398,9 @@ def task_train(df: pd.DataFrame):
 
 @task(
     name="register_challenger",
-    description="Register newly trained model in MLflow Staging",
+    description="Register newly trained model as an MLflow challenger version",
+    retries=1,
+    retry_delay_seconds=30,
 )
 def task_register_challenger(result):
     registry = ModelRegistry()
@@ -446,7 +459,22 @@ def task_promote_or_reject(result, challenger_mv, decision):
     registry = ModelRegistry()
 
     if decision.promoted:
-        registry.promote_challenger(challenger_mv, decision)
+        promoted_ok = registry.promote_challenger(challenger_mv, decision)
+        if not promoted_ok:
+            # The registry could not move the champion alias. Do NOT report a
+            # successful promotion — the old champion is still live. Alert the
+            # failure and fail the flow so on_failure/observability catch it.
+            alerter.alert_pipeline_error(
+                flow_name="retrain_validate_promote",
+                task_name="promote_or_reject",
+                error_message=(
+                    f"Promotion of v{challenger_mv.version} FAILED — champion "
+                    "unchanged (registry alias not moved); see registry logs."
+                ),
+            )
+            raise RuntimeError(
+                f"Promotion of v{challenger_mv.version} failed; champion unchanged"
+            )
         alerter.alert_model_promoted(
             model_name=settings.mlflow.model_name,
             version=challenger_mv.version,
@@ -573,7 +601,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run retraining pipeline flows")
     parser.add_argument(
         "--flow",
-        choices=["ingest", "drift", "retrain", "full"],
+        choices=["ingest", "drift", "retrain", "full", "rollback"],
         default="full",
         help="Which flow to run",
     )
@@ -584,9 +612,19 @@ if __name__ == "__main__":
     parser.add_argument("--force-retrain", action="store_true")
     args = parser.parse_args()
 
-    if args.flow == "ingest":
+    if args.flow == "rollback":
+        # Emergency: re-point the champion alias at the most recent archived
+        # version (used when a promoted model misbehaves on live traffic).
+        reg = ModelRegistry()
+        mv = reg.rollback_to_previous()
+        if mv is not None:
+            _log.info("Rolled back champion to v%s", mv.version)
+        else:
+            raise SystemExit("Rollback failed or no archived version available.")
+
+    elif args.flow == "ingest":
         if not args.batch_path:
-            print("--batch-path required for ingest flow")
+            raise SystemExit("--batch-path required for ingest flow")
         else:
             flow_ingest_and_validate(
                 batch_path=args.batch_path,

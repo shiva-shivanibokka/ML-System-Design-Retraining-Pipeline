@@ -507,8 +507,6 @@ class CreditRiskTrainer:
 
         # Log study summary to MLflow
         try:
-            import mlflow
-
             with mlflow.start_run(run_id=parent_run_id):
                 mlflow.log_metric("optuna_best_val_auc", best.value)
                 mlflow.log_param("optuna_n_completed_trials", len(study.trials))

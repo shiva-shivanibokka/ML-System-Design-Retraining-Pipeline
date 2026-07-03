@@ -195,6 +195,7 @@ class ModelRegistry:
         Promote challenger to champion and archive the previous champion.
         Returns True if promotion succeeded.
         """
+        archived_version = None
         try:
             # Archive current champion (if any); the champion alias is then
             # reassigned atomically below via _set_champion_alias — no
@@ -202,6 +203,7 @@ class ModelRegistry:
             current_champion = self._get_champion()
             if current_champion is not None:
                 self._archive_alias(current_champion.version)
+                archived_version = current_champion.version
                 logger.info(
                     "Archived previous champion: %s v%s",
                     self.cfg.model_name,
@@ -211,7 +213,27 @@ class ModelRegistry:
             # Promote challenger by pointing the champion alias at it
             self._set_champion_alias(challenger_version.version)
 
-            # Update description
+        except Exception as e:
+            logger.error("Promotion failed: %s", e)
+            # Compensate partial state: if we archived the old champion but the
+            # champion alias never got repointed, the old version now carries
+            # BOTH `champion` and `archived-<v>`. Remove the stray archived
+            # alias so the old champion stays cleanly live.
+            if archived_version is not None:
+                try:
+                    self._client.delete_registered_model_alias(
+                        self.cfg.model_name,
+                        f'{self.cfg.registered_model_aliases["archived_prefix"]}-{archived_version}',
+                    )
+                    logger.info(
+                        "Compensated: removed stray archived alias on v%s", archived_version
+                    )
+                except Exception as ce:
+                    logger.error("Compensation failed for v%s: %s", archived_version, ce)
+            return False
+
+        # Description update is non-critical — never fail a promotion over it.
+        try:
             self._client.update_model_version(
                 name=self.cfg.model_name,
                 version=challenger_version.version,
@@ -221,19 +243,17 @@ class ModelRegistry:
                     f"Delta={decision.auc_delta:+.4f} vs previous champion"
                 ),
             )
-
-            logger.info(
-                "PROMOTED: %s v%s → champion | AUC=%.4f (+%.4f)",
-                self.cfg.model_name,
-                challenger_version.version,
-                decision.challenger_auc,
-                decision.auc_delta,
-            )
-            return True
-
         except Exception as e:
-            logger.warning("Promotion failed: %s", e)
-            return False
+            logger.warning("Champion promoted but description update failed: %s", e)
+
+        logger.info(
+            "PROMOTED: %s v%s → champion | AUC=%.4f (+%.4f)",
+            self.cfg.model_name,
+            challenger_version.version,
+            decision.challenger_auc,
+            decision.auc_delta,
+        )
+        return True
 
     def reject_challenger(
         self,

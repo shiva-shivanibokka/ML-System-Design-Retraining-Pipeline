@@ -230,7 +230,7 @@ class SlackAlerter:
         if not self.cfg.events.get("model_rejected", True):
             return
         self._send(
-            title=f"Model REJECTED — {model_name} v{version} stays in Staging",
+            title=f"Model REJECTED — {model_name} v{version} not promoted (champion unchanged)",
             level=AlertLevel.ERROR,
             fields=[
                 {

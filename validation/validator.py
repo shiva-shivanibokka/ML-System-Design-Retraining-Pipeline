@@ -232,15 +232,28 @@ class ModelValidator:
             auc_delta=round(challenger_auc - champion_auc, 4),
         )
 
-        # If no champion exists, or champion scoring failed/produced no
-        # probs — auto-promote (first model / no valid baseline to compare
-        # against). This guarantees the bootstrap/slice gates below (which
-        # index champion_probs) are never reached with champion_probs=None.
-        if champion_model is None or champion_probs is None:
+        # First-model case: NO champion exists → promote the challenger as the
+        # baseline (there is nothing to validate against). Legitimate.
+        if champion_model is None:
             decision.promoted = True
             decision.bootstrap_gate_passed = True
             decision.slice_gate_passed = True
             decision.hard_floor_passed = True
+            self._generate_model_card(
+                challenger_result, decision, test_df, drift_report_dict, dq_summary
+            )
+            return decision
+
+        # A champion EXISTS but could not be scored (predict raised, so
+        # champion_probs is None) → FAIL CLOSED. Never promote an unvalidated
+        # challenger just because the baseline errored — that would defeat the
+        # purpose of the gates. This also guarantees the bootstrap/slice gates
+        # below never index champion_probs=None.
+        if champion_probs is None:
+            decision.promoted = False
+            decision.rejection_reasons.append(
+                "Champion scoring failed — cannot validate challenger; failing closed"
+            )
             self._generate_model_card(
                 challenger_result, decision, test_df, drift_report_dict, dq_summary
             )
@@ -275,6 +288,21 @@ class ModelValidator:
         failed = [r for r in slice_results if not r.passed]
         decision.failed_slices = [f"{r.slice_name}={r.cohort_value}" for r in failed]
         decision.slice_gate_passed = self._slice_gate_passed(slice_results)
+        # Fail closed if the fairness gate could not actually be evaluated:
+        # cohorts are configured but NONE of their columns are present in the
+        # test set (a schema/data mismatch), on a non-empty test set. Without
+        # this, a test_df carrying only transformed features would let a model
+        # that degrades on protected cohorts pass with no fairness check run.
+        _slice_cols = [d["column"] for d in self.dataset_cfg.validation_slices.values()]
+        if (
+            self.dataset_cfg.validation_slices
+            and len(test_df) > 0
+            and not any(c in test_df.columns for c in _slice_cols)
+        ):
+            decision.slice_gate_passed = False
+            decision.rejection_reasons.append(
+                "Fairness gate could not be evaluated: no cohort columns present in test set"
+            )
         if failed:
             for f in failed:
                 decision.rejection_reasons.append(

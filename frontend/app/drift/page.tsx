@@ -11,7 +11,6 @@ type FeatureDriftResult = {
   ks_drifted: boolean;
   psi_score: number;
   psi_status: string;
-  psi_drifted?: boolean;
 };
 
 type DriftReport = {
