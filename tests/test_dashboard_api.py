@@ -23,6 +23,22 @@ def test_search_runs_drops_optuna_child_runs_before_limit():
     assert list(out["run_id"]) == ["parent"]
 
 
+def test_search_runs_excludes_drift_stage_runs_by_default():
+    """Drift-check runs (tags.pipeline.stage=drift) carry a drift report but no
+    model/metrics — they must stay out of the runs/model-cards lists, yet remain
+    reachable with include_drift=True so /drift/latest can find them."""
+    rows = [
+        {"run_id": "drift1", "start_time": 200, "tags.mlflow.parentRunId": None, "tags.pipeline.stage": "drift"},
+        {"run_id": "retrain1", "start_time": 100, "tags.mlflow.parentRunId": None, "tags.pipeline.stage": None},
+    ]
+    fake = pd.DataFrame(rows)
+    with patch("mlflow.search_runs", return_value=fake), patch("mlflow.set_tracking_uri"):
+        default = dashboard_api._search_runs(limit=5)
+        with_drift = dashboard_api._search_runs(limit=5, include_drift=True)
+    assert list(default["run_id"]) == ["retrain1"]
+    assert list(with_drift["run_id"]) == ["drift1", "retrain1"]
+
+
 def test_runs_endpoint_returns_list():
     fake = pd.DataFrame([{"run_id": "a", "status": "FINISHED", "start_time": 1, "metrics.auc": 0.8}])
     with patch("serving.dashboard_api._search_runs", return_value=fake):

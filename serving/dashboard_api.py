@@ -22,14 +22,19 @@ def _client():
     return MlflowClient(tracking_uri=settings.mlflow.tracking_uri)
 
 
-def _search_runs(limit: int) -> pd.DataFrame:
-    """Return the most recent *parent* (retrain) runs, newest first.
+def _search_runs(limit: int, include_drift: bool = False) -> pd.DataFrame:
+    """Return the most recent *parent* runs, newest first.
 
     Optuna logs each HPO trial as a nested child run. Those children start
     after their parent and would otherwise crowd out — or entirely hide — the
     real retrain run under a small ``limit``. Over-fetch, drop children
     (any row carrying ``tags.mlflow.parentRunId``), then apply the limit so
     callers always see actual retrain runs, never HPO trials.
+
+    Drift-check runs (tagged ``pipeline.stage=drift``) carry a drift report but
+    no model or metrics; they are excluded by default so they don't clutter the
+    runs/model-cards lists. ``/drift/latest`` opts in via ``include_drift=True``
+    to locate the latest drift report.
     """
     import mlflow
 
@@ -43,6 +48,8 @@ def _search_runs(limit: int) -> pd.DataFrame:
         return df
     if "tags.mlflow.parentRunId" in df.columns:
         df = df[df["tags.mlflow.parentRunId"].isna()]
+    if not include_drift and "tags.pipeline.stage" in df.columns:
+        df = df[df["tags.pipeline.stage"] != "drift"]
     return df.head(limit).reset_index(drop=True)
 
 
@@ -135,7 +142,11 @@ def model_card(run_id: str):
 @router.get("/drift/latest")
 def drift_latest():
     try:
-        df = _search_runs(5)
+        # include_drift=True so dedicated drift-check runs are searched; the
+        # drift artifact lives on those (and, historically, could sit on a
+        # retrain run). _run_artifact_json now list-checks before downloading,
+        # so scanning several runs is cheap and cannot hang.
+        df = _search_runs(15, include_drift=True)
         if df is None or df.empty:
             return None
         for rid in df["run_id"]:

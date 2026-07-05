@@ -308,6 +308,30 @@ def flow_detect_drift(
     # Run drift detection
     report_dict = task_run_drift(reference, current, batch_date, champion_model)
 
+    # Persist the drift report to a dedicated, tagged MLflow run so the
+    # dashboard's /drift/latest can surface it. task_run_drift only logs the
+    # artifact when a run is already active (it isn't, here), so we open our own
+    # short-lived run — closed BEFORE any retrain subflow starts, to avoid
+    # nesting the retrain run under it.
+    try:
+        import json as _json
+
+        import mlflow
+
+        from configs.paths import temp_file
+
+        mlflow.set_tracking_uri(settings.mlflow.tracking_uri)
+        mlflow.set_experiment(settings.mlflow.experiment_name)
+        with mlflow.start_run(
+            run_name=f"drift-check-{batch_date}", tags={"pipeline.stage": "drift"}
+        ):
+            _p = temp_file(prefix="drift_", suffix=".json")
+            _p.write_text(_json.dumps(report_dict))
+            mlflow.log_artifact(str(_p), artifact_path="drift")
+        logger.info("Drift report persisted to MLflow for the dashboard.")
+    except Exception as e:
+        logger.warning("Could not persist drift report to MLflow: %s", e)
+
     triggered = report_dict.get("retrain_triggered", False) or force_retrain
 
     if triggered:
