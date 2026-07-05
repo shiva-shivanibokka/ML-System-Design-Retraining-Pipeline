@@ -1,13 +1,23 @@
 const BASE = process.env.NEXT_PUBLIC_API_URL ?? "";
 
+// Per-request timeout for dashboard reads. `fetch` has no default timeout, so a
+// slow/hanging upstream (e.g. a stalled /drift/latest) would otherwise hang the
+// server render of a force-dynamic page indefinitely — the Vercel function never
+// returns and the page never loads. With a timeout, a hang surfaces as an
+// AbortError caught below and degrades to the endpoint's empty-state fallback.
+const REQUEST_TIMEOUT_MS = 6000;
+
 async function get<T>(path: string, fallback: T): Promise<T> {
   if (!BASE) return fallback;
   try {
-    const res = await fetch(`${BASE}${path}`, { cache: "no-store" });
+    const res = await fetch(`${BASE}${path}`, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
     if (!res.ok) return fallback;
     return (await res.json()) as T;
   } catch {
-    return fallback;
+    return fallback; // network error, non-OK, or timeout (AbortError)
   }
 }
 
