@@ -7,6 +7,7 @@ import StatusStrip from "@/components/StatusStrip";
 import MetricTile from "@/components/MetricTile";
 import Chart from "@/components/Chart";
 import SectionHeader from "@/components/SectionHeader";
+import { glossary } from "@/lib/glossary";
 
 export const dynamic = "force-dynamic";
 
@@ -41,10 +42,10 @@ export default async function OverviewPage() {
       <section>
         <SectionHeader eyebrow="Model" title="Champion at a glance" />
         <div className="grid">
-          <MetricTile label="Champion Version" value={champion ? `v${champion.version}` : "None"} tone="green" />
-          <MetricTile label="Champion AUC" value={parseChampionAuc(champion?.description, runs)} />
-          <MetricTile label="Model Versions" value={registry.total_versions} />
-          <MetricTile label="Champion Loaded" value={health.champion_loaded ? "Yes" : "No"} tone={health.champion_loaded ? "green" : "red"} sub={`API: ${health.status}`} />
+          <MetricTile label="Champion Version" value={champion ? `v${champion.version}` : "None"} tone="green" info={glossary("champion")} />
+          <MetricTile label="Champion AUC" value={parseChampionAuc(champion?.description, runs)} info={glossary("auc")} />
+          <MetricTile label="Model Versions" value={registry.total_versions} info={glossary("total_versions")} />
+          <MetricTile label="Champion Loaded" value={health.champion_loaded ? "Yes" : "No"} tone={health.champion_loaded ? "green" : "red"} sub={`API: ${health.status}`} info={glossary("champion_loaded")} />
         </div>
       </section>
 

@@ -5,7 +5,17 @@ import { deriveDecision } from "@/lib/derive";
 import GateCheck from "@/components/GateCheck";
 import MetricTile from "@/components/MetricTile";
 import SectionHeader from "@/components/SectionHeader";
-import { fmtNum, numOr0 } from "@/lib/format";
+import { fmtNum, numOr0, humanizeLabel } from "@/lib/format";
+import { glossary } from "@/lib/glossary";
+
+// Maps a model-card metric key to its glossary id, for the "?" info tooltip.
+const METRIC_GLOSSARY_IDS: Record<string, string> = {
+  auc: "auc",
+  gini: "gini",
+  ks_statistic: "ks",
+  brier_score: "brier",
+  average_precision: "average_precision",
+};
 
 export const dynamic = "force-dynamic";
 
@@ -48,6 +58,11 @@ export default async function ModelCardsPage({
         sub="Auto-generated documentation for every training run (Mitchell et al., 2019)."
       />
 
+      <div className="page-intro">
+        An auto-generated <b>model card</b> documenting one training run — its data, metrics, promotion decision,
+        and which features drove it.
+      </div>
+
       {ids.length === 0 ? (
         <div className="empty-state">No model cards found. Run the retrain flow to generate one.</div>
       ) : (
@@ -78,10 +93,10 @@ export default async function ModelCardsPage({
                   <div className="empty-state">No training metadata in this card.</div>
                 ) : (
                   <div className="grid">
-                    <MetricTile label="Window (days)" value={training.window_days ?? "—"} />
-                    <MetricTile label="Rows" value={training.n_rows ?? "—"} />
-                    <MetricTile label="Optuna Trials" value={training.optuna_trials ?? "—"} />
-                    <MetricTile label="Duration (s)" value={fmtNum(training.duration_seconds, 1)} />
+                    <MetricTile label="Window (days)" value={training.window_days ?? "—"} info={glossary("window_days")} />
+                    <MetricTile label="Rows" value={training.n_rows ?? "—"} info={glossary("n_rows")} />
+                    <MetricTile label="Optuna Trials" value={training.optuna_trials ?? "—"} info={glossary("optuna_trials")} />
+                    <MetricTile label="Duration (s)" value={fmtNum(training.duration_seconds, 1)} info={glossary("duration_seconds")} />
                   </div>
                 )}
               </section>
@@ -92,9 +107,17 @@ export default async function ModelCardsPage({
                   <div className="empty-state">No overall metrics in this card.</div>
                 ) : (
                   <div className="grid">
-                    {Object.entries(overallMetrics).map(([key, value]) => (
-                      <MetricTile key={key} label={key} value={fmtNum(value)} />
-                    ))}
+                    {Object.entries(overallMetrics).map(([key, value]) => {
+                      const glossaryId = METRIC_GLOSSARY_IDS[key];
+                      return (
+                        <MetricTile
+                          key={key}
+                          label={key}
+                          value={fmtNum(value)}
+                          info={glossaryId ? glossary(glossaryId) : undefined}
+                        />
+                      );
+                    })}
                   </div>
                 )}
               </section>
@@ -139,7 +162,7 @@ export default async function ModelCardsPage({
                   <div className="card">
                     {Object.entries(featImp).map(([feature, value]) => (
                       <div className="bar-row" key={feature}>
-                        <span>{feature}</span>
+                        <span>{humanizeLabel(feature)}</span>
                         <div className="bar-track">
                           <div
                             className="bar-fill"

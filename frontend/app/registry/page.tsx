@@ -2,6 +2,7 @@ import { api } from "@/lib/api";
 import MetricTile from "@/components/MetricTile";
 import SectionHeader from "@/components/SectionHeader";
 import Timeline, { type TimelineItem } from "@/components/Timeline";
+import { glossary } from "@/lib/glossary";
 
 export const dynamic = "force-dynamic";
 
@@ -38,14 +39,20 @@ export default async function RegistryPage() {
         sub={`Champion and archived model versions (${registry.total_versions} total).`}
       />
 
+      <div className="page-intro">
+        The <b>champion</b> is the model currently serving. <b>Archived</b> versions are past champions and
+        rejected challengers, kept for audit and rollback.
+      </div>
+
       <section>
         <div className="grid">
-          <MetricTile label="Total Versions" value={registry.total_versions} />
+          <MetricTile label="Total Versions" value={registry.total_versions} info={glossary("total_versions")} />
           <MetricTile label="Archived" value={archived.length} />
           <MetricTile
             label="Champion Version"
             value={champion ? `v${champion.version}` : "—"}
             tone={champion ? "green" : "neutral"}
+            info={glossary("champion")}
           />
         </div>
       </section>

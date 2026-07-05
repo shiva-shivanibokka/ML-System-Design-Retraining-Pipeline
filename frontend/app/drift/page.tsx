@@ -3,6 +3,7 @@ import DriftExplainer from "@/components/DriftExplainer";
 import MetricTile from "@/components/MetricTile";
 import SectionHeader from "@/components/SectionHeader";
 import { fmtNum, numOr0 } from "@/lib/format";
+import { glossary } from "@/lib/glossary";
 
 export const dynamic = "force-dynamic";
 
@@ -50,6 +51,12 @@ export default async function DriftPage() {
         sub="Per-feature KS/PSI drift signals from the most recent evaluated batch — the trigger behind every retrain."
       />
 
+      <div className="page-intro">
+        This page watches each new data batch for <b>drift</b> — features shifting away from what the model
+        trained on — using KS tests and PSI. If drift crosses the configured threshold, it{" "}
+        <b>triggers a retrain</b> automatically.
+      </div>
+
       {!report ? (
         <div className="empty-state">No drift report available yet. Run the ingestion/drift flow first.</div>
       ) : (
@@ -67,17 +74,20 @@ export default async function DriftPage() {
                 label="KS-Drifted Features"
                 value={ksDrifted}
                 tone={ksDrifted > 0 ? "red" : "green"}
+                info={glossary("ks_drift")}
               />
               <MetricTile
                 label="PSI-Critical Features"
                 value={psiCritical}
                 tone={psiCritical > 0 ? "red" : "green"}
+                info={glossary("psi")}
               />
               <MetricTile
                 label="Retrain Triggered"
                 value={report.retrain_triggered ? "YES" : "No"}
                 sub={report.batch_date ? `Batch: ${report.batch_date}` : undefined}
                 tone={report.retrain_triggered ? "red" : "green"}
+                info={glossary("retrain_triggered")}
               />
             </div>
           </section>

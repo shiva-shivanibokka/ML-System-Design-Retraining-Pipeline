@@ -30,6 +30,11 @@ export default async function RetrainsPage() {
     <div>
       <SectionHeader eyebrow="History" title="Retrain runs" sub="Every retrain run with core metrics (AUC / KS) plotted as a trend." />
 
+      <div className="page-intro">
+        Each entry below is a <b>retrain run</b> — the pipeline retraining the model on recent data. The AUC and
+        KS trends show whether model quality is holding up over time.
+      </div>
+
       <Timeline items={items} />
 
       <h2>AUC Trend</h2>

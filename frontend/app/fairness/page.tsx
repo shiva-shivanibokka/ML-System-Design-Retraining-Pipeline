@@ -1,6 +1,6 @@
 import { latestCard } from "@/lib/cards";
 import SectionHeader from "@/components/SectionHeader";
-import { fmtNum } from "@/lib/format";
+import { fmtNum, humanizeCohort } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
@@ -38,6 +38,12 @@ export default async function FairnessPage() {
         sub="Every cohort must hold within tolerance vs. the champion, or the challenger is rejected — this is the gate that blocks a model that improves on average but degrades a subgroup."
       />
 
+      <div className="page-intro">
+        The <b>fairness / slice gate</b> checks the challenger&apos;s AUC on every cohort (e.g. each credit grade)
+        against the champion; a challenger that degrades any subgroup beyond tolerance is rejected even if it
+        improves on average. This is <b>not</b> SHAP.
+      </div>
+
       {entries.length === 0 ? (
         <div className="empty-state">No slice metrics found. Run the retrain flow first.</div>
       ) : (
@@ -62,7 +68,7 @@ export default async function FairnessPage() {
 
                 return (
                   <tr key={cohort}>
-                    <td>{cohort}</td>
+                    <td>{humanizeCohort(cohort)}</td>
                     <td>
                       <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", minWidth: "180px" }}>
                         <div className="delta-bar" style={{ flex: 1 }}>
