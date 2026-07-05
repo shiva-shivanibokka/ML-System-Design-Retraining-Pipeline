@@ -49,7 +49,10 @@ jobs:
 
       - name: Run retraining pipeline on the latest real batch
         if: steps.guard.outputs.ok == 'true'
-        run: python pipelines/flows.py --flow full
+        # Run as a module so the repo root is on sys.path (top-level packages
+        # like `alerting`/`configs` are importable). `python pipelines/flows.py`
+        # puts pipelines/ on the path instead and fails with ModuleNotFoundError.
+        run: python -m pipelines.flows --flow full
 
       - name: Refresh champion on the serving Space
         # Best-effort: after a promote, tell the HF serving API to reload the
