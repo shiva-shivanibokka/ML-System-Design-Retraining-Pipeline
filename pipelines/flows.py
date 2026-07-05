@@ -605,6 +605,27 @@ def flow_retrain_validate_promote(
     return promoted
 
 
+def _latest_trainable_batch(processed: list[Path]) -> Optional[Path]:
+    """Return the newest batch whose target class balance clears the ingest DQ
+    gate (2%-98% positives), or None if none do.
+
+    The most recent calendar batches can have immature labels — loans too recent
+    to have defaulted yet — giving a near-0% positive rate that the DQ gate
+    (`data_quality/validator.py::_add_class_balance_check`) correctly rejects.
+    Retraining must target the newest batch with *observed* outcomes, not merely
+    the newest by date, or the nightly full flow aborts at ingest every run.
+    """
+    target = settings.dataset.target_column
+    for path in reversed(processed):  # newest first
+        try:
+            rate = pd.read_parquet(path, columns=[target])[target].mean()
+        except Exception:
+            continue
+        if 0.02 <= rate <= 0.98:
+            return path
+    return None
+
+
 # =============================================================================
 # CLI entry point — run any flow directly
 # =============================================================================
@@ -668,7 +689,19 @@ if __name__ == "__main__":
         processed = sorted(Path(settings.dataset.processed_dir).glob("batch_*.parquet"))
         if not processed:
             raise SystemExit("No batches found. Run: dvc pull  (or build them via data/build_batches.py)")
-        latest = processed[-1]
+        latest = _latest_trainable_batch(processed)
+        if latest is None:
+            raise SystemExit(
+                "No batch has a trainable class balance (2%-98% positives) — the "
+                "most recent batches likely have immature labels. Build more "
+                "history or lower the class-balance floor."
+            )
         batch_date = latest.stem.replace("batch_", "")
+        if latest != processed[-1]:
+            _log.info(
+                "Skipping newer immature batch(es); retraining on the latest "
+                "mature batch %s (clears the class-balance DQ gate).",
+                batch_date,
+            )
         flow_ingest_and_validate(batch_path=str(latest), batch_date=batch_date)
         flow_detect_drift(batch_date=batch_date, force_retrain=args.force_retrain)
