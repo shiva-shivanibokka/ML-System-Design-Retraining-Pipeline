@@ -4,6 +4,11 @@
 
 # ── Orchestration ─────────────────────────────────────────────────────────────
 prefect==2.20.3
+# Pin anyio: Prefect 2.20.3 allows anyio>=4.4,<5, but anyio>=4.13 made
+# TaskGroup.create_task abstract, which Prefect 2.20.3's GatherTaskGroup does not
+# implement -> "Can't instantiate abstract class GatherTaskGroup" crashes every
+# flow on a fresh install. 4.12.1 is the last compatible release.
+anyio==4.12.1
 
 # ── Model ─────────────────────────────────────────────────────────────────────
 lightgbm==4.3.0
