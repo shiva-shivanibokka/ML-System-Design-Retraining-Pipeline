@@ -1,8 +1,11 @@
 # Data versioning (Milestone 0)
 dvc==3.55.2
 dvc-s3==3.2.0  # S3-compatible remote for DagsHub storage (dvc push/pull)
-dagshub==0.3.35
 pathspec==0.12.1  # pin: dvc 3.55.2 is incompatible with pathspec>=1.0 (_DIR_MARK import error)
+# NOTE: the `dagshub` pip package is intentionally NOT listed. It is never imported
+# (DagsHub is reached via MLflow env-auth + the dvc-s3 remote), and dagshub 0.3.35
+# caps httpx to ~=0.23, which conflicts with httpx==0.27.0 below (FastAPI TestClient)
+# and breaks the CI install resolve. Do not re-add it without lifting that cap.
 
 # Test + lint (Milestone 3)
 pytest==8.2.2
