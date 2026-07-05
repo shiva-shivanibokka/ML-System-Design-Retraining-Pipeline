@@ -2,6 +2,15 @@
 dvc==3.55.2
 dvc-s3==3.2.0  # S3-compatible remote for DagsHub storage (dvc push/pull)
 pathspec==0.12.1  # pin: dvc 3.55.2 is incompatible with pathspec>=1.0 (_DIR_MARK import error)
+# S3 backend for the DVC DagsHub remote — PINNED to versions compatible with
+# dvc-s3 3.2.0. Left unpinned, pip pulls bleeding-edge s3fs/aiobotocore that
+# dvc-s3 3.2.0 cannot import, so `dvc pull` fails on CI with
+# "RemoteMissingDepsError: filesystem for 's3' ... missing dependencies".
+s3fs==2024.6.1
+aiobotocore==2.12.3
+botocore==1.34.69
+boto3==1.34.69
+fsspec==2024.6.1
 # NOTE: the `dagshub` pip package is intentionally NOT listed. It is never imported
 # (DagsHub is reached via MLflow env-auth + the dvc-s3 remote), and dagshub 0.3.35
 # caps httpx to ~=0.23, which conflicts with httpx==0.27.0 below (FastAPI TestClient)
