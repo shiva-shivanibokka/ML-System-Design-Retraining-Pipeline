@@ -18,3 +18,22 @@ export function fmtNum(value: unknown, digits = 4): string {
 export function numOr0(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
+
+// Turn a raw snake/kebab-case key into a human label:
+// "credit_grade" -> "Credit Grade", "debt_to_income" -> "Debt To Income".
+export function humanizeLabel(key: string): string {
+  return String(key)
+    .replace(/[_-]+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+// Turn a cohort key "credit_grade=A" / "income_bracket=very_high" into a
+// readable "Credit Grade · A" / "Income Bracket · Very High".
+export function humanizeCohort(key: string): string {
+  const [dim, ...rest] = String(key).split("=");
+  const val = rest.join("=");
+  const left = humanizeLabel(dim);
+  const right = val ? humanizeLabel(val) : "";
+  return right ? `${left} · ${right}` : left;
+}

@@ -37,16 +37,46 @@ body {
   min-height: 100vh;
 }
 
-body::before {
+body::before,
+body::after {
   content: "";
   position: fixed;
-  inset: 0;
   z-index: -1;
   pointer-events: none;
+}
+
+/* static base wash */
+body::before {
+  inset: 0;
   background:
     radial-gradient(60% 40% at 50% -10%, rgba(110, 168, 255, 0.16), transparent 70%),
     radial-gradient(45% 35% at 85% 0%, rgba(139, 92, 246, 0.12), transparent 70%),
     var(--bg);
+}
+
+/* slow-drifting aurora blobs — subtle background motion (paused under
+   prefers-reduced-motion via the global media block at the end of this file) */
+body::after {
+  inset: -25%;
+  background:
+    radial-gradient(26% 26% at 22% 28%, rgba(110, 168, 255, 0.16), transparent 60%),
+    radial-gradient(24% 24% at 78% 62%, rgba(139, 92, 246, 0.15), transparent 60%),
+    radial-gradient(22% 22% at 52% 88%, rgba(62, 207, 142, 0.09), transparent 60%);
+  filter: blur(48px);
+  animation: aurora-drift 28s ease-in-out infinite alternate;
+  will-change: transform;
+}
+
+@keyframes aurora-drift {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1) rotate(0deg);
+  }
+  50% {
+    transform: translate3d(2.5%, -2%, 0) scale(1.1) rotate(3deg);
+  }
+  100% {
+    transform: translate3d(-2%, 2.5%, 0) scale(1.05) rotate(-3deg);
+  }
 }
 
 a {
@@ -174,33 +204,32 @@ p.section-sub {
 .tile {
   position: relative;
   padding: 1.1rem 1.25rem 1.1rem 1.4rem;
-  overflow: hidden;
+  overflow: visible; /* let info tooltips escape the card */
+  /* accent bar as an inset shadow: follows the rounded corners, no clipping */
+  box-shadow: inset 3px 0 0 var(--tile-accent, var(--border-strong));
 }
 
-.tile::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 3px;
-  background: var(--border-strong);
+.tile-green {
+  --tile-accent: var(--green);
 }
 
-.tile-green::before {
-  background: var(--green);
+.tile-amber {
+  --tile-accent: var(--amber);
 }
 
-.tile-amber::before {
-  background: var(--amber);
+.tile-red {
+  --tile-accent: var(--red);
 }
 
-.tile-red::before {
-  background: var(--red);
+.tile-neutral {
+  --tile-accent: var(--border-strong);
 }
 
-.tile-neutral::before {
-  background: var(--border-strong);
+.tile.glass:hover {
+  box-shadow:
+    inset 3px 0 0 var(--tile-accent, var(--border-strong)),
+    0 0 0 1px rgba(110, 168, 255, 0.12),
+    0 0 24px rgba(139, 92, 246, 0.08);
 }
 
 /* ---------- banners ---------- */
@@ -981,6 +1010,96 @@ pre.json-block {
 .timeline-right {
   font-size: 0.72rem;
   color: var(--text-dim);
+}
+
+/* ---------- page intro ---------- */
+
+.page-intro {
+  padding: 0.9rem 1.1rem;
+  margin-bottom: 1.5rem;
+  border-left: 3px solid var(--accent);
+  color: var(--text-dim);
+  font-size: 0.9rem;
+  line-height: 1.55;
+}
+
+.page-intro b,
+.page-intro strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* ---------- info tooltip ("?" glossary dot) ---------- */
+
+.infodot {
+  position: relative;
+  display: inline-flex;
+  margin-left: 0.35rem;
+  vertical-align: middle;
+  cursor: help;
+}
+
+.infodot-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+  color: var(--text-dim);
+  font-size: 0.62rem;
+  font-weight: 700;
+  line-height: 1;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.infodot:hover .infodot-mark,
+.infodot:focus-visible .infodot-mark {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.infodot-tip {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%) translateY(4px);
+  width: max-content;
+  max-width: 260px;
+  padding: 0.55rem 0.7rem;
+  border-radius: 8px;
+  background: #0c111c;
+  border: 1px solid var(--border-strong);
+  color: var(--text);
+  font-size: 0.76rem;
+  font-weight: 400;
+  line-height: 1.45;
+  letter-spacing: 0;
+  text-transform: none;
+  white-space: normal;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  z-index: 60;
+}
+
+.infodot-tip::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 5px solid transparent;
+  border-top-color: var(--border-strong);
+}
+
+.infodot:hover .infodot-tip,
+.infodot:focus-within .infodot-tip {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(-50%) translateY(0);
 }
 
 /* ---------- reduced motion ---------- */
