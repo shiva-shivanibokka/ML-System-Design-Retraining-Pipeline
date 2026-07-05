@@ -51,6 +51,25 @@ jobs:
         if: steps.guard.outputs.ok == 'true'
         run: python pipelines/flows.py --flow full
 
+      - name: Refresh champion on the serving Space
+        # Best-effort: after a promote, tell the HF serving API to reload the
+        # champion into memory so /predict serves the new model without a manual
+        # restart. Never fails the retrain if the Space is asleep or the call is
+        # flaky. Requires HF_SPACE_ID; ADMIN_TOKEN only if the Space sets one.
+        if: steps.guard.outputs.ok == 'true'
+        env:
+          HF_SPACE_ID: ${{ secrets.HF_SPACE_ID }}
+          ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
+        run: |
+          if [ -z "${HF_SPACE_ID}" ]; then echo "HF_SPACE_ID not set; skipping reload."; exit 0; fi
+          host="$(printf '%s' "$HF_SPACE_ID" | sed 's#[/_]#-#g')"
+          url="https://${host}.hf.space/admin/reload-champion"
+          echo "Reloading champion at ${url}"
+          code=$(curl -s -o /tmp/reload.json -w '%{http_code}' --max-time 60 \
+            -X POST "$url" -H "X-Admin-Token: ${ADMIN_TOKEN}" || echo 000)
+          echo "reload http=${code} body=$(cat /tmp/reload.json 2>/dev/null)"
+          if [ "$code" != "200" ]; then echo "::warning::champion reload returned ${code} (non-fatal)"; fi
+
       - name: Report skip
         if: steps.guard.outputs.ok != 'true'
         run: echo "DagsHub MLflow secrets not set; skipping scheduled retrain."
