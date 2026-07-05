@@ -94,6 +94,14 @@ def registry():
 def _run_artifact_json(run_id: str, artifact_path: str) -> dict | None:
     c = _client()
     try:
+        # Existence check BEFORE downloading. Probing a *missing* artifact_path
+        # with download_artifacts against the remote DagsHub artifact store is
+        # slow enough to hang callers — notably /drift/latest, which probes the
+        # "drift" artifact across several retrain runs that don't carry one. A
+        # single list_artifacts metadata call short-circuits the miss so the
+        # endpoint returns promptly instead of stalling the dashboard render.
+        if not any(f.path == artifact_path for f in c.list_artifacts(run_id)):
+            return None
         local = c.download_artifacts(run_id, artifact_path)
     except Exception:
         return None
