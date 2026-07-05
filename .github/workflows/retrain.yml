@@ -9,6 +9,16 @@ on:
   schedule:
     - cron: "0 3 * * *" # 03:00 UTC nightly
   workflow_dispatch:
+    inputs:
+      flow:
+        description: "Flow to run"
+        type: choice
+        options: [full, drift]
+        default: full
+      batch_date:
+        description: "Batch (YYYY-MM, blank = latest). full picks the latest itself; use a mature batch (e.g. 2017-07) for drift."
+        type: string
+        default: ""
 
 jobs:
   retrain:
@@ -47,12 +57,22 @@ jobs:
         if: steps.guard.outputs.ok == 'true'
         run: dvc pull -v
 
-      - name: Run retraining pipeline on the latest real batch
+      - name: Run retraining pipeline
         if: steps.guard.outputs.ok == 'true'
         # Run as a module so the repo root is on sys.path (top-level packages
         # like `alerting`/`configs` are importable). `python pipelines/flows.py`
         # puts pipelines/ on the path instead and fails with ModuleNotFoundError.
-        run: python -m pipelines.flows --flow full
+        # Defaults to the full flow on the latest batch (the nightly cron path);
+        # workflow_dispatch can pick `drift` and a specific mature batch.
+        env:
+          FLOW: ${{ inputs.flow || 'full' }}
+          BATCH_DATE: ${{ inputs.batch_date }}
+        run: |
+          if [ -n "$BATCH_DATE" ]; then
+            python -m pipelines.flows --flow "$FLOW" --batch-date "$BATCH_DATE"
+          else
+            python -m pipelines.flows --flow "$FLOW"
+          fi
 
       - name: Refresh champion on the serving Space
         # Best-effort: after a promote, tell the HF serving API to reload the
