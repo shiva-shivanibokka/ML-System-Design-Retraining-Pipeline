@@ -342,6 +342,12 @@ The `MLFLOW_TRACKING_URI` env override already exists in `configs/settings.py` �
 
 The Space's public URL is `https://<user>-<space>.hf.space` (here, `https://shiva-1993-ml-retraining-pipeline.hf.space`); `/docs` serves the Swagger UI. The live links are in the [Live Demo](#live-demo) table at the top.
 
+> **Fail-closed env vars (required, not optional).** The serving API is hardened to fail closed:
+> - **`FRONTEND_ORIGINS`** — CORS. If unset, cross-origin browser requests are **blocked** (the dashboard's live prediction form and AI drift analyst won't work). Set it to your Vercel URL(s), comma-separated. Server-side page rendering is unaffected either way.
+> - **`ADMIN_TOKEN`** — guards `POST /admin/reload-champion`. If unset, that endpoint returns **503 (disabled)**, so the nightly retrain can't hot-reload the new champion into the live Space (it will serve the previous champion until the Space next restarts). To keep post-retrain auto-reload working, set the **same** `ADMIN_TOKEN` value as both a GitHub repo secret and a Space secret. The token is compared in constant time.
+>
+> The public `/predict` and `/drift/explain` endpoints are rate-limited per client (120/min and 20/min) and `/drift/explain` bounds its request-body size.
+
 ---
 
 ## Interview Talking Points
