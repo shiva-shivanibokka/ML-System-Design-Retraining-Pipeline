@@ -1,5 +1,10 @@
 # ML System Design: Automated Retraining Pipeline
 
+> **Recruiter TL;DR**
+> - **What it is** — An end-to-end MLOps system that keeps a production credit-risk model accurate as data drifts: it detects distribution shift nightly, retrains a hyperparameter-tuned challenger, gates it behind statistical *and* fairness checks, and promotes it only if it genuinely beats the incumbent. Running live across Vercel + Hugging Face + DagsHub.
+> - **Hardest problem solved** — Separating drift monitoring from retraining by **label maturity**: recent loans haven't defaulted yet, so training on them teaches the model that defaults are rare and biases it to under-predict risk. The pipeline monitors drift on the freshest batch but trains only on batches with *observed* outcomes.
+> - **Proof it works** — The fully automated nightly retrain loop runs green on real Lending Club data (2007–2018); 96 automated tests pass; and the promotion gate demonstrably rejected a challenger (AUC 0.71) to protect the better incumbent champion (AUC 0.72) — no rubber-stamping.
+
 A production-grade automated model lifecycle system for a **credit risk LightGBM model** — built to reflect how Uber, Airbnb, Netflix, and Google actually manage model decay in production.
 
 The core question this project answers:
@@ -198,6 +203,28 @@ Challenger AUC must exceed champion AUC by at least +0.005. Prevents promoting a
 | LLM drift analyst | Claude Haiku 4.5 (Anthropic SDK) | First LLM integration in portfolio |
 | CI/CD | GitHub Actions (`ci.yml`, `retrain.yml`, `deploy-space.yml`) | First in portfolio |
 | Containerization | Docker + docker-compose | Standard |
+
+---
+
+## Skills Demonstrated
+
+The same work above, mapped to the competencies it exercises:
+
+| Competency | Where this project shows it |
+|---|---|
+| **Production ML deployment / MLOps** | Model-serving boundary (FastAPI) fully decoupled from training; champion/challenger model registry with automated promotion and one-command rollback |
+| **ML monitoring & drift detection** | Per-feature KS test + PSI (Basel II), prediction-score PSI, and Evidently reports driving automated retrain triggers |
+| **Model validation / responsible AI** | Bootstrap CI (1,000-sample) significance test, per-slice fairness gates across 4 cohort dimensions, and a hard AUC floor — all required before any promotion |
+| **Data engineering / ETL pipeline design** | Raw → validated → processed batch pipeline with Great Expectations quality gates and DVC-versioned datasets |
+| **Workflow orchestration** | Prefect 2 flows (ingest → drift → retrain) with task retries, conditional subflow dispatch, and scheduled execution |
+| **CI/CD pipeline implementation** | GitHub Actions for lint + test on every PR, a nightly scheduled retrain, and auto-deploy of the serving API |
+| **Cloud deployment (Vercel / Hugging Face / DagsHub)** | Live Next.js frontend, containerized serving Space, and hosted MLflow + DVC remote — all on free tier |
+| **RESTful API design** | FastAPI service exposing prediction, drift, registry, training-history, and admin endpoints behind a health check |
+| **LLM application integration** | Claude Haiku 4.5 drift analyst (BYOK, multi-provider) turning raw KS/PSI signals into plain-English narratives, with graceful degradation when no key is set |
+| **Modern web frontend** | Next.js 14 (App Router, TypeScript) dashboard on Vercel — a pure API client built with server components |
+| **Containerization & Docker** | Dockerfile + docker-compose for the full local stack; Docker-based Hugging Face Space for serving |
+| **System design & architecture** | Documented tradeoff reasoning throughout (KS vs PSI, bootstrap vs t-test, drift/retrain label-maturity decoupling) |
+| **Automated testing** | 96 tests covering flows, promotion gates, drift, batch selection, and the serving API |
 
 ---
 
