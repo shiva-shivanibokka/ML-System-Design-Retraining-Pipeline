@@ -5,15 +5,17 @@ import { useRouter } from "next/navigation";
 
 // Client-side cold-start recovery for the free-tier Hugging Face serving Space,
 // which sleeps after inactivity. When a server-rendered page comes back empty
-// because its first request had to wake the Space, this schedules a single soft
-// `router.refresh()` a few seconds later (by which time the Space is awake) so
-// the data appears without the user manually refreshing.
+// because its first request had to wake the Space, this re-fetches the page a
+// few times (a few seconds apart) until the data appears — no manual refresh.
 //
-// `active` is the page's "data looks empty / server not ready" signal. Retries
-// are bounded per browser session (sessionStorage counter) and reset the moment
-// real data loads, so a genuinely-empty dashboard can never loop forever.
-const RETRY_KEY = "cold-start-retries";
-const MAX_RETRIES = 2;
+// `active` is the page's "data looks empty / server not ready" signal. The
+// moment real data loads, `active` flips to false, this effect re-runs, its
+// cleanup cancels any pending retry, and the chain stops. While the page stays
+// empty, `active` stays true and the effect does NOT re-run on its own — so the
+// retries are driven by a self-rescheduling timer chain inside a single effect
+// (not by the effect re-firing, which router.refresh() does not cause). A hard
+// cap bounds the total attempts so a genuinely-empty dashboard can never loop.
+const MAX_RETRIES = 4;
 
 export default function AutoRefresh({
   active,
@@ -25,32 +27,27 @@ export default function AutoRefresh({
   const router = useRouter();
 
   useEffect(() => {
-    // Data present — clear the counter so a later cold start can retry again.
-    if (!active) {
-      try {
-        sessionStorage.removeItem(RETRY_KEY);
-      } catch {
-        /* sessionStorage unavailable (private mode) — nothing to reset */
-      }
-      return;
-    }
+    if (!active) return; // data present — nothing to recover
 
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
     let attempts = 0;
-    try {
-      attempts = Number(sessionStorage.getItem(RETRY_KEY) ?? "0");
-    } catch {
-      /* ignore */
-    }
-    if (attempts >= MAX_RETRIES) return; // give up — likely genuinely empty
 
-    try {
-      sessionStorage.setItem(RETRY_KEY, String(attempts + 1));
-    } catch {
-      /* ignore */
-    }
+    const scheduleNext = () => {
+      timer = setTimeout(() => {
+        if (cancelled) return;
+        attempts += 1;
+        router.refresh(); // re-run server components; if data loads, `active`
+        //                   flips false, this effect's cleanup cancels the chain
+        if (attempts < MAX_RETRIES) scheduleNext();
+      }, delayMs);
+    };
 
-    const timer = setTimeout(() => router.refresh(), delayMs);
-    return () => clearTimeout(timer);
+    scheduleNext();
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, [active, delayMs, router]);
 
   return null;

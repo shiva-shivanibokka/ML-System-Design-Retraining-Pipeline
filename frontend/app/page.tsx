@@ -25,7 +25,7 @@ export default async function OverviewPage() {
 
   return (
     <div className="stack">
-      <AutoRefresh active={health.status !== "ok"} />
+      <AutoRefresh active={health.status !== "ok" || runs.length === 0} />
       <section className="hero">
         <div className="eyebrow">Automated MLOps · drift-triggered retraining</div>
         <h1>The pipeline that keeps a credit-risk model honest.</h1>
