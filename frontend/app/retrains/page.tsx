@@ -4,6 +4,7 @@ import Chart from "@/components/Chart";
 import SectionHeader from "@/components/SectionHeader";
 import Timeline, { type TimelineItem } from "@/components/Timeline";
 import { formatStartTime, fmtNum } from "@/lib/format";
+import AutoRefresh from "@/components/AutoRefresh";
 
 export const dynamic = "force-dynamic";
 // Allow the serverless render to wait out a cold-start wake of the HF Space.
@@ -30,6 +31,7 @@ export default async function RetrainsPage() {
 
   return (
     <div>
+      <AutoRefresh active={runs.length === 0} />
       <SectionHeader eyebrow="History" title="Retrain runs" sub="Every retrain run with core metrics (AUC / KS) plotted as a trend." />
 
       <div className="page-intro">

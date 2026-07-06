@@ -1,6 +1,7 @@
 import { latestCard } from "@/lib/cards";
 import SectionHeader from "@/components/SectionHeader";
 import { fmtNum, humanizeCohort } from "@/lib/format";
+import AutoRefresh from "@/components/AutoRefresh";
 
 export const dynamic = "force-dynamic";
 // Allow the serverless render to wait out a cold-start wake of the HF Space.
@@ -34,6 +35,7 @@ export default async function FairnessPage() {
 
   return (
     <div className="stack">
+      <AutoRefresh active={card == null} />
       <SectionHeader
         eyebrow="Governance"
         title="Fairness / slice gate"

@@ -7,6 +7,7 @@ import StatusStrip from "@/components/StatusStrip";
 import MetricTile from "@/components/MetricTile";
 import Chart from "@/components/Chart";
 import SectionHeader from "@/components/SectionHeader";
+import AutoRefresh from "@/components/AutoRefresh";
 import { glossary } from "@/lib/glossary";
 
 export const dynamic = "force-dynamic";
@@ -24,6 +25,7 @@ export default async function OverviewPage() {
 
   return (
     <div className="stack">
+      <AutoRefresh active={health.status !== "ok"} />
       <section className="hero">
         <div className="eyebrow">Automated MLOps · drift-triggered retraining</div>
         <h1>The pipeline that keeps a credit-risk model honest.</h1>

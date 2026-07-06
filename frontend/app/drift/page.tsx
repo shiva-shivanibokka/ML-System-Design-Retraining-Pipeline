@@ -4,6 +4,7 @@ import MetricTile from "@/components/MetricTile";
 import SectionHeader from "@/components/SectionHeader";
 import { fmtNum, numOr0, humanizeLabel, prettyTriggerReason } from "@/lib/format";
 import { glossary } from "@/lib/glossary";
+import AutoRefresh from "@/components/AutoRefresh";
 
 export const dynamic = "force-dynamic";
 // Allow the serverless render to wait out a cold-start wake of the HF Space.
@@ -47,6 +48,7 @@ export default async function DriftPage() {
 
   return (
     <div className="stack">
+      <AutoRefresh active={report == null} />
       <SectionHeader
         eyebrow="Monitoring"
         title="Drift Monitor"

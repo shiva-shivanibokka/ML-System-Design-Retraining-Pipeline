@@ -7,6 +7,7 @@ import MetricTile from "@/components/MetricTile";
 import SectionHeader from "@/components/SectionHeader";
 import { fmtNum, numOr0, humanizeLabel, fmtParam, prettyTriggerReason } from "@/lib/format";
 import { glossary } from "@/lib/glossary";
+import AutoRefresh from "@/components/AutoRefresh";
 
 // Maps a model-card metric key to its glossary id, for the "?" info tooltip.
 const METRIC_GLOSSARY_IDS: Record<string, string> = {
@@ -105,6 +106,7 @@ export default async function ModelCardsPage({
 
   return (
     <div className="stack">
+      <AutoRefresh active={ids.length === 0} />
       <SectionHeader
         eyebrow="Documentation"
         title="Model Cards"

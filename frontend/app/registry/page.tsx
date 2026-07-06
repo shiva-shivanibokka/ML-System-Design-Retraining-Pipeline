@@ -3,6 +3,7 @@ import MetricTile from "@/components/MetricTile";
 import SectionHeader from "@/components/SectionHeader";
 import Timeline, { type TimelineItem } from "@/components/Timeline";
 import { glossary } from "@/lib/glossary";
+import AutoRefresh from "@/components/AutoRefresh";
 
 export const dynamic = "force-dynamic";
 // Allow the serverless render to wait out a cold-start wake of the HF Space.
@@ -35,6 +36,7 @@ export default async function RegistryPage() {
 
   return (
     <div className="stack">
+      <AutoRefresh active={registry.total_versions === 0} />
       <SectionHeader
         eyebrow="Model Registry"
         title="Champion Lineage"
