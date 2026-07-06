@@ -369,6 +369,7 @@ class ModelRegistry:
         unexpected live behavior.
         """
         archived_prefix = self.cfg.registered_model_aliases["archived_prefix"] + "-"
+        archived_version = None
         try:
             all_versions = self._client.search_model_versions(
                 f"name='{self.cfg.model_name}'"
@@ -392,6 +393,7 @@ class ModelRegistry:
             current = self._get_champion()
             if current is not None and current.version != latest_archived.version:
                 self._archive_alias(current.version)
+                archived_version = current.version
 
             # Re-promote the archived model
             self._set_champion_alias(latest_archived.version)
@@ -420,6 +422,23 @@ class ModelRegistry:
 
         except Exception as e:
             logger.warning("Rollback failed: %s", e)
+            # Compensate partial state: if we archived the outgoing champion but
+            # never re-pointed the champion alias, that version now carries BOTH
+            # `champion` and a stray `archived-<v>` alias — which would make it a
+            # bogus rollback target next time. Remove the stray archived alias so
+            # the outgoing champion stays cleanly live (mirrors promote_challenger).
+            if archived_version is not None:
+                try:
+                    self._client.delete_registered_model_alias(
+                        self.cfg.model_name, f"{archived_prefix}{archived_version}"
+                    )
+                    logger.info(
+                        "Compensated: removed stray archived alias on v%s", archived_version
+                    )
+                except Exception as ce:
+                    logger.error(
+                        "Rollback compensation failed for v%s: %s", archived_version, ce
+                    )
             return None
 
     # -----------------------------------------------------------------------

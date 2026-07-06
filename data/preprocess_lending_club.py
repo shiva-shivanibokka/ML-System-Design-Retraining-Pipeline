@@ -125,17 +125,53 @@ def _map_default(status):
     return None
 
 
+# Below this surviving fraction, a row-drop is treated as a data error (schema
+# drift / format change upstream) rather than normal filtering, and preprocess
+# raises instead of silently returning a decimated or empty frame. The target
+# filter legitimately drops unresolved loans, so its floor is looser than the
+# nulls-dropna floor applied to already-resolved rows.
+_MIN_SURVIVING_AFTER_TARGET = 0.10
+_MIN_SURVIVING_AFTER_DROPNA = 0.50
+
+
+def _guard_drop(before: int, after: int, floor: float, step: str) -> None:
+    """Raise if a filtering step dropped an implausibly large fraction of rows.
+
+    Guards against a silent 90-100% drop when the raw schema shifts (a column
+    renamed/emptied upstream, or a value format change that makes every parse
+    return NaN), which would otherwise surface only as a later opaque concat
+    crash or a quietly biased model.
+    """
+    if before == 0:
+        raise ValueError(f"preprocess: no input rows before '{step}'.")
+    if after == 0:
+        raise ValueError(
+            f"preprocess: '{step}' dropped ALL {before} rows — suspected schema "
+            "change or bad input."
+        )
+    if after < floor * before:
+        raise ValueError(
+            f"preprocess: '{step}' dropped {before - after}/{before} rows "
+            f"({100 * (before - after) / before:.1f}%), below the {floor:.0%} "
+            "survival floor — suspected schema change."
+        )
+
+
 def preprocess(raw: pd.DataFrame) -> pd.DataFrame:
     """Pure transform: raw Lending Club rows -> canonical schema + default + issue_d.
 
     Drops unresolved loans (loan_status not in {Fully Paid, Charged Off}) and
-    any rows with nulls in required columns after mapping.
+    any rows with nulls in required columns after mapping. Each drop is guarded
+    (see ``_guard_drop``) so an upstream schema change can't silently empty the
+    dataset.
     """
     df = raw.copy()
 
     # Resolve target label; drop unresolved (e.g. "Current") loans.
+    before = len(df)
     df["default"] = df["loan_status"].apply(_map_default)
     df = df[df["default"].notna()].copy()
+    _guard_drop(before, len(df), _MIN_SURVIVING_AFTER_TARGET, "target-label filter")
     df["default"] = df["default"].astype(int)
 
     # Derived numeric fields.
@@ -161,7 +197,9 @@ def preprocess(raw: pd.DataFrame) -> pd.DataFrame:
 
     out_columns = CANONICAL_COLUMNS + ["default", "issue_d"]
     out = df[out_columns].copy()
+    before = len(out)
     out = out.dropna(subset=out_columns)
+    _guard_drop(before, len(out), _MIN_SURVIVING_AFTER_DROPNA, "required-column dropna")
 
     return out.reset_index(drop=True)
 

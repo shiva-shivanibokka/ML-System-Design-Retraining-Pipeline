@@ -21,6 +21,35 @@ from pathlib import Path
 import pandas as pd
 
 
+def filter_by_observation_window(
+    df: pd.DataFrame,
+    snapshot: str | pd.Timestamp,
+    min_observation_months: int | None,
+) -> pd.DataFrame:
+    """Drop loan cohorts too recent to have observed outcomes (label maturity).
+
+    A point-in-time loan snapshot **censors** recent cohorts: a loan issued
+    close to the snapshot is still mostly open, so the subset that survives
+    label mapping (`Fully Paid`/`Charged Off`) is a biased sample of early
+    terminators — its default rate *and* feature mix reflect label immaturity,
+    not the real population. Building drift batches from those months makes the
+    detector fire on a maturity artifact rather than genuine population change.
+
+    Restricting to issue months at least ``min_observation_months`` before the
+    snapshot keeps whole, comparatively-matured cohorts and drops the censored
+    tail. Pass ``None`` to disable (keeps the legacy, censored behaviour).
+
+    This is the build-time counterpart to the training-time maturity guard
+    (`MATURE_POS_RATE_FLOOR` / `_latest_trainable_batch` in pipelines/flows.py).
+    """
+    if min_observation_months is None:
+        return df
+    snap_period = pd.Timestamp(snapshot).to_period("M")
+    mature_through = snap_period - min_observation_months
+    keep = df["issue_d"].dt.to_period("M") <= mature_through
+    return df[keep].copy()
+
+
 def split_temporal(
     df: pd.DataFrame, reference_months: int = 12
 ) -> tuple[pd.DataFrame, list[tuple[str, pd.DataFrame]]]:
@@ -41,6 +70,13 @@ def split_temporal(
     year_month = sorted_df["issue_d"].dt.to_period("M")
 
     distinct_periods = year_month.drop_duplicates().sort_values().tolist()
+    if len(distinct_periods) <= reference_months:
+        raise ValueError(
+            f"split_temporal: only {len(distinct_periods)} distinct month(s) but "
+            f"reference_months={reference_months} — this yields ZERO drift batches "
+            "(the reference would absorb everything). Provide more history or lower "
+            "reference_months."
+        )
     reference_periods = set(distinct_periods[:reference_months])
     batch_periods = distinct_periods[reference_months:]
 

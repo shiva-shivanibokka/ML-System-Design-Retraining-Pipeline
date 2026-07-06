@@ -66,3 +66,40 @@ def test_champion_load_is_retried_after_transient_failure(monkeypatch):
     monkeypatch.setattr(appmod, "load_champion", flaky_load)
     assert appmod._get_champion() is None  # first call: transient failure
     assert appmod._get_champion() is not None  # retried, now loaded
+
+
+def test_reload_keeps_old_champion_when_load_fails(monkeypatch):
+    """T5: a failed reload (registry outage) must retain the healthy champion,
+    not overwrite it with None (which would 503 every /predict)."""
+    old = _fake_champion()
+    appmod._champion = old
+    monkeypatch.setattr(appmod, "load_champion", lambda: None)
+    assert appmod.reload_champion() is old
+    assert appmod._champion is old
+
+
+def test_admin_reload_disabled_when_token_unset(monkeypatch):
+    """T6: fail closed — no ADMIN_TOKEN means the endpoint is disabled (503)."""
+    monkeypatch.delenv("ADMIN_TOKEN", raising=False)
+    r = TestClient(appmod.app).post("/admin/reload-champion")
+    assert r.status_code == 503
+
+
+def test_admin_reload_rejects_wrong_token(monkeypatch):
+    """T6: a wrong token is rejected (401)."""
+    monkeypatch.setenv("ADMIN_TOKEN", "secret")
+    r = TestClient(appmod.app).post(
+        "/admin/reload-champion", headers={"X-Admin-Token": "wrong"}
+    )
+    assert r.status_code == 401
+
+
+def test_admin_reload_accepts_correct_token(monkeypatch):
+    """T6: the correct token reloads the champion (200)."""
+    monkeypatch.setenv("ADMIN_TOKEN", "secret")
+    monkeypatch.setattr(appmod, "load_champion", _fake_champion)
+    r = TestClient(appmod.app).post(
+        "/admin/reload-champion", headers={"X-Admin-Token": "secret"}
+    )
+    assert r.status_code == 200
+    assert r.json()["champion_loaded"] is True

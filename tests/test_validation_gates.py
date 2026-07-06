@@ -99,6 +99,23 @@ def test_champion_scoring_failure_fails_closed(monkeypatch):
     assert any("scoring failed" in r.lower() for r in decision.rejection_reasons)
 
 
+def test_champion_without_encoders_fails_closed(monkeypatch):
+    """T3: a champion lacking an encoders artifact must NOT be scored on the
+    challenger's encoders (mis-encoding collapses its AUC and wrongly promotes an
+    inferior challenger). It must fail closed and never call champion.predict."""
+    v = ModelValidator()
+    monkeypatch.setattr(v, "_generate_model_card", lambda *a, **k: None)
+    df = canonical_frame(n=200, seed=9)
+    _, enc = prepare_features(df, fit_encoders=True)
+    chall = _fake_challenger(df, enc, 4)
+    champ = MagicMock()
+    champ.encoders = {}  # no encoders artifact (legacy champion)
+    champ.predict.return_value = np.random.default_rng(1).random(len(df))
+    decision = v.validate(chall, champ, df)
+    assert decision.promoted is False
+    champ.predict.assert_not_called()
+
+
 def test_first_model_still_promotes_when_no_champion(monkeypatch):
     """H1 guard: a genuinely absent champion (first model) still promotes."""
     v = ModelValidator()

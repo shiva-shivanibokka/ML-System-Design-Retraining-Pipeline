@@ -202,19 +202,24 @@ class ModelValidator:
         champion_probs = None
         if champion_model is not None:
             champ_encoders = getattr(champion_model, "encoders", None)
-            if champ_encoders:
+            if not champ_encoders:
+                # No encoders artifact (legacy champion). Scoring the champion on
+                # the challenger's encoders would mis-encode categories, collapse
+                # its measured AUC, and wrongly promote an inferior challenger.
+                # Fail closed: leave champion_probs=None so the guard below rejects.
+                logger.error(
+                    "Champion has no encoders artifact — cannot validate reliably; "
+                    "failing closed (rejecting challenger)."
+                )
+            else:
                 X_test_champ, _ = prepare_features(
                     test_df, label_encoders=champ_encoders, fit_encoders=False
                 )
-            else:
-                # No encoders artifact (legacy champion) — fall back but log loudly.
-                logger.warning("Champion has no encoders; scoring may be approximate.")
-                X_test_champ = X_test_chall
-            try:
-                champion_probs = champion_model.predict(X_test_champ)
-            except Exception as e:
-                logger.error("Champion scoring failed: %s", e)
-                champion_probs = None
+                try:
+                    champion_probs = champion_model.predict(X_test_champ)
+                except Exception as e:
+                    logger.error("Champion scoring failed: %s", e)
+                    champion_probs = None
 
         challenger_auc = roc_auc_score(y_test, challenger_probs)
         champion_auc = (

@@ -239,18 +239,36 @@ def task_run_drift(
     # If champion exists, compute prediction drift on both sets
     pred_scores_ref = None
     pred_scores_cur = None
-    if champion_model is not None and settings.drift.prediction_drift.enabled:
+    champ_encoders = getattr(champion_model, "encoders", None)
+    if (
+        champion_model is not None
+        and settings.drift.prediction_drift.enabled
+        and champ_encoders
+    ):
         try:
             from training.trainer import prepare_features
 
-            X_ref, encs = prepare_features(reference, fit_encoders=True)
+            # Encode with the CHAMPION's own encoders, not a fresh refit on the
+            # reference. The champion booster was trained on the integer codes its
+            # encoders produce; refitting on `reference` assigns different codes for
+            # any differing/absent category, so the champion would score features it
+            # never saw and prediction-drift PSI would measure a phantom distribution
+            # disconnected from the live serving path.
+            X_ref, _ = prepare_features(
+                reference, label_encoders=champ_encoders, fit_encoders=False
+            )
             X_cur, _ = prepare_features(
-                current, label_encoders=encs, fit_encoders=False
+                current, label_encoders=champ_encoders, fit_encoders=False
             )
             pred_scores_ref = champion_model.predict(X_ref)
             pred_scores_cur = champion_model.predict(X_cur)
         except Exception as e:
-            logger.warning(f"Prediction drift scoring failed: {e}")
+            logger.warning(f"Prediction drift scoring failed: {type(e).__name__}: {e}")
+    elif champion_model is not None and not champ_encoders:
+        logger.warning(
+            "Champion has no encoders artifact — skipping prediction drift "
+            "(feature KS/PSI drift is unaffected)."
+        )
 
     report = detector.detect(
         reference=reference,

@@ -98,3 +98,37 @@ def test_promote_challenger_returns_false_and_compensates_on_alias_failure():
     # Compensation: the stray archived-4 alias must be removed.
     fake_client.delete_registered_model_alias.assert_called_once()
     assert fake_client.delete_registered_model_alias.call_args.args[1] == "archived-4"
+
+
+def test_rollback_compensates_on_alias_failure():
+    """T4: if the champion alias move fails after the outgoing champion was
+    archived, rollback_to_previous must return None AND remove the stray
+    archived alias, so no version is left carrying both champion and
+    archived-<v> (which would corrupt the next rollback)."""
+    reg = ModelRegistry()
+    fake_client = MagicMock()
+
+    current = MagicMock()
+    current.version = "5"
+    archived_mv = MagicMock()
+    archived_mv.version = "4"
+    archived_mv.aliases = ["archived-4"]
+    archived_mv.tags = {"auc": "0.80"}
+    archived_mv.run_id = "r4"
+    fake_client.search_model_versions.return_value = [archived_mv]
+
+    def _set_alias(name=None, alias=None, version=None):
+        if alias == "champion":
+            raise RuntimeError("alias move failed")
+        return None
+
+    fake_client.set_registered_model_alias.side_effect = _set_alias
+
+    with patch.object(reg, "_client", fake_client, create=True), patch.object(
+        reg, "_get_champion", return_value=current
+    ):
+        result = reg.rollback_to_previous()
+
+    assert result is None
+    fake_client.delete_registered_model_alias.assert_called_once()
+    assert fake_client.delete_registered_model_alias.call_args.args[1] == "archived-5"

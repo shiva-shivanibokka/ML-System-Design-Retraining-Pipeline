@@ -4,6 +4,8 @@ from pathlib import Path
 
 import pandas as pd
 
+import pytest
+
 from data.preprocess_lending_club import (
     _map_default,
     _parse_emp_length,
@@ -77,3 +79,12 @@ def test_strip_pct_returns_nan_on_junk():
     assert math.isnan(_strip_pct("none"))
     assert math.isnan(_strip_pct(""))
     assert _strip_pct("13.56%") == 13.56
+
+
+def test_preprocess_raises_when_target_filter_empties_frame():
+    """T7: an all-unresolved batch (schema drift / bad input) must raise, not
+    silently return an empty frame that crashes later at concat time."""
+    raw = pd.read_csv(FIX).copy()
+    raw["loan_status"] = "Current"  # nothing resolves -> target filter drops all
+    with pytest.raises(ValueError, match="dropped ALL"):
+        preprocess(raw)

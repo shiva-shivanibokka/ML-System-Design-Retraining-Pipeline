@@ -1,8 +1,13 @@
 # tests/test_build_batches.py
 import numpy as np
 import pandas as pd
+import pytest
 
-from data.build_batches import split_temporal, write_datasets
+from data.build_batches import (
+    filter_by_observation_window,
+    split_temporal,
+    write_datasets,
+)
 
 
 def _frame():
@@ -43,3 +48,30 @@ def test_write_datasets_writes_reference_and_batch_files(tmp_path):
         assert batch_path.exists()
         batch_df = pd.read_parquet(batch_path)
         assert len(batch_df) == 20
+
+
+def test_observation_window_drops_censored_recent_cohorts():
+    """T1: months too recent to have observed outcomes are dropped."""
+    dates = pd.to_datetime(
+        ["2016-06-01"] * 5 + ["2017-12-01"] * 5 + ["2018-06-01"] * 5 + ["2018-12-01"] * 5
+    )
+    df = pd.DataFrame({"issue_d": dates, "default": [0] * 20})
+    # snapshot 2018-12, require 12 months observation -> keep issue months <= 2017-12
+    out = filter_by_observation_window(df, "2018-12-31", 12)
+    kept = out["issue_d"].dt.to_period("M").astype(str).unique().tolist()
+    assert sorted(kept) == ["2016-06", "2017-12"]
+    assert "2018-06" not in kept and "2018-12" not in kept
+
+
+def test_observation_window_none_is_a_noop():
+    dates = pd.to_datetime(["2018-12-01"] * 3)
+    df = pd.DataFrame({"issue_d": dates, "default": [0, 1, 0]})
+    assert len(filter_by_observation_window(df, "2018-12-31", None)) == 3
+
+
+def test_split_temporal_raises_when_no_batches_possible():
+    """T16: distinct months <= reference_months yields zero batches -> raise."""
+    dates = pd.to_datetime(["2015-01-01"] * 10 + ["2015-02-01"] * 10)
+    df = pd.DataFrame({"issue_d": dates, "default": [0] * 20})
+    with pytest.raises(ValueError, match="ZERO drift batches"):
+        split_temporal(df, reference_months=2)

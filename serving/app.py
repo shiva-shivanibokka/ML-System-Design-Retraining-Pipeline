@@ -1,6 +1,7 @@
 """FastAPI serving layer for the champion credit-risk model."""
 from __future__ import annotations
 
+import hmac
 import os
 
 from fastapi import FastAPI, Header, HTTPException
@@ -22,15 +23,18 @@ app = FastAPI(
 )
 
 _frontend_origins = os.getenv("FRONTEND_ORIGINS")
-if not _frontend_origins:
+_origins = [o.strip() for o in (_frontend_origins or "").split(",") if o.strip()]
+if not _origins:
+    # Fail closed: an unset FRONTEND_ORIGINS blocks cross-origin browser access
+    # rather than opening the API to every site (which, combined with the admin
+    # endpoint, would let any page drive it from a victim's browser).
     logger.warning(
-        "FRONTEND_ORIGINS not set — allowing ALL origins for CORS. Set it to the "
-        "frontend URL in production to lock down cross-origin access."
+        "FRONTEND_ORIGINS not set — cross-origin browser access is DISABLED. "
+        "Set it to the frontend URL(s) to allow the dashboard to call the API."
     )
-_origins = [o for o in (_frontend_origins or "*").split(",") if o]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=_origins or ["*"],
+    allow_origins=_origins,
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
@@ -52,8 +56,16 @@ def _get_champion() -> ChampionModel | None:
 
 
 def reload_champion() -> ChampionModel | None:
+    """Refresh the in-memory champion from the registry.
+
+    Only swaps in the new model if the load succeeds — a transient registry
+    outage must NOT overwrite a healthy live champion with None (which would
+    503 every /predict until a later reload happened to succeed).
+    """
     global _champion
-    _champion = load_champion()
+    new = load_champion()
+    if new is not None:
+        _champion = new
     return _champion
 
 
@@ -61,10 +73,19 @@ def reload_champion() -> ChampionModel | None:
 def admin_reload_champion(
     x_admin_token: str | None = Header(default=None, alias="X-Admin-Token"),
 ) -> dict:
-    """Force a champion refresh (e.g. after a retrain). Guarded by ADMIN_TOKEN
-    when that env var is set; open otherwise (demo)."""
+    """Force a champion refresh (e.g. after a retrain).
+
+    Fails CLOSED: the endpoint is disabled unless ADMIN_TOKEN is set, and the
+    token is compared in constant time. An unauthenticated, state-changing,
+    registry-pulling endpoint on a public Space would otherwise be a trivial
+    DoS/cost lever, and a plain `!=` compare leaks a timing side-channel.
+    """
     expected = os.getenv("ADMIN_TOKEN")
-    if expected and x_admin_token != expected:
+    if not expected:
+        raise HTTPException(
+            status_code=503, detail="Admin endpoint disabled (ADMIN_TOKEN not set)."
+        )
+    if not x_admin_token or not hmac.compare_digest(x_admin_token, expected):
         raise HTTPException(status_code=401, detail="Unauthorized")
     champ = reload_champion()
     return {
