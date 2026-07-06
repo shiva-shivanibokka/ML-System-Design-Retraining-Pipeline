@@ -59,6 +59,33 @@ from validation.validator import ModelValidator
 # Shared helpers
 # ---------------------------------------------------------------------------
 
+# Label-maturity floor for RETRAINING. Distinct from the ingest DQ gate's
+# degenerate-class floor (2%, in data_quality/validator.py::_add_class_balance_check):
+# that gate rejects corrupt, all-one-class batches; this higher bar rejects
+# batches whose labels are merely *immature* — recent loans too new to have
+# defaulted yet, giving an artificially deflated positive rate. Training on
+# immature labels teaches the model that defaults are rarer than they truly are,
+# biasing it to under-predict risk. So retraining both selects and trains on
+# batches whose outcomes are substantially observed (~mature Lending Club batches
+# settle near the ~20% reference default rate). Drift MONITORING ignores this
+# floor entirely — feature-distribution drift needs no labels, so it always runs
+# on the newest calendar batch, however immature its outcomes.
+MATURE_POS_RATE_FLOOR = 0.10
+
+
+def _batch_pos_rate(path: Path) -> Optional[float]:
+    """Positive-class rate of a batch's target column, or None if unreadable."""
+    target = settings.dataset.target_column
+    try:
+        return float(pd.read_parquet(path, columns=[target])[target].mean())
+    except Exception:
+        return None
+
+
+def _is_mature(rate: Optional[float]) -> bool:
+    """True if a batch's positive rate clears the label-maturity floor."""
+    return rate is not None and MATURE_POS_RATE_FLOOR <= rate <= 0.98
+
 
 def _load_reference_data() -> pd.DataFrame:
     ref_path = Path(settings.dataset.reference_dir) / "reference_data.parquet"
@@ -71,9 +98,19 @@ def _load_reference_data() -> pd.DataFrame:
 
 
 def _load_all_processed_data() -> pd.DataFrame:
-    """Load and concat all processed batch parquet files."""
+    """Load and concat processed batches with *mature* labels for training.
+
+    Immature-label batches (recent loans not yet defaulted, near-0% positives)
+    are excluded: concatenating them dilutes the positive class and biases the
+    model toward under-predicting default risk. If no batch clears the maturity
+    floor, fall back to all batches rather than train on nothing.
+    """
     processed_dir = Path(settings.dataset.processed_dir)
     files = sorted(processed_dir.glob("*.parquet"))
+    if files:
+        mature = [f for f in files if _is_mature(_batch_pos_rate(f))]
+        if mature:
+            files = mature
     if not files:
         # Fall back to raw initial dataset
         raw_dir = Path(settings.dataset.raw_dir)
@@ -606,22 +643,17 @@ def flow_retrain_validate_promote(
 
 
 def _latest_trainable_batch(processed: list[Path]) -> Optional[Path]:
-    """Return the newest batch whose target class balance clears the ingest DQ
-    gate (2%-98% positives), or None if none do.
+    """Return the newest batch whose labels are mature enough to train on
+    (positive rate ≥ MATURE_POS_RATE_FLOOR), or None if none qualify.
 
     The most recent calendar batches can have immature labels — loans too recent
-    to have defaulted yet — giving a near-0% positive rate that the DQ gate
-    (`data_quality/validator.py::_add_class_balance_check`) correctly rejects.
-    Retraining must target the newest batch with *observed* outcomes, not merely
-    the newest by date, or the nightly full flow aborts at ingest every run.
+    to have defaulted yet — giving a deflated positive rate. Retraining must
+    target the newest batch with *observed* outcomes, not merely the newest by
+    date; drift monitoring, by contrast, runs on the newest batch regardless
+    (see the `--flow full` branch, which decouples the two).
     """
-    target = settings.dataset.target_column
     for path in reversed(processed):  # newest first
-        try:
-            rate = pd.read_parquet(path, columns=[target])[target].mean()
-        except Exception:
-            continue
-        if 0.02 <= rate <= 0.98:
+        if _is_mature(_batch_pos_rate(path)):
             return path
     return None
 
@@ -689,19 +721,38 @@ if __name__ == "__main__":
         processed = sorted(Path(settings.dataset.processed_dir).glob("batch_*.parquet"))
         if not processed:
             raise SystemExit("No batches found. Run: dvc pull  (or build them via data/build_batches.py)")
-        latest = _latest_trainable_batch(processed)
-        if latest is None:
+        # Decouple the two concerns that a retraining pipeline conflates at its
+        # peril: drift MONITORING is unsupervised (feature distributions) and
+        # wants the freshest data; RETRAINING is supervised (needs observed
+        # labels) and wants the freshest *mature* data. The newest calendar
+        # batch and the newest trainable batch are usually different files.
+        newest = processed[-1]  # freshest data — what we monitor for drift
+        mature = _latest_trainable_batch(processed)  # freshest observed labels
+        if mature is None:
             raise SystemExit(
-                "No batch has a trainable class balance (2%-98% positives) — the "
-                "most recent batches likely have immature labels. Build more "
-                "history or lower the class-balance floor."
+                f"No batch clears the label-maturity floor "
+                f"({MATURE_POS_RATE_FLOOR:.0%} positives) — the most recent "
+                "batches likely have immature labels. Build more history or "
+                "lower MATURE_POS_RATE_FLOOR in pipelines/flows.py."
             )
-        batch_date = latest.stem.replace("batch_", "")
-        if latest != processed[-1]:
+        newest_date = newest.stem.replace("batch_", "")
+        mature_date = mature.stem.replace("batch_", "")
+
+        # Ingest/validate the newest MATURE batch — the freshest labeled data fit
+        # to train on. (Ingesting the newest calendar batch would fail the DQ
+        # gate whenever its labels are still immature, which is correct.)
+        flow_ingest_and_validate(batch_path=str(mature), batch_date=mature_date)
+
+        if newest_date != mature_date:
             _log.info(
-                "Skipping newer immature batch(es); retraining on the latest "
-                "mature batch %s (clears the class-balance DQ gate).",
-                batch_date,
+                "Drift-monitoring the newest batch %s; retraining (if triggered) "
+                "trains on mature batches only (freshest: %s).",
+                newest_date,
+                mature_date,
             )
-        flow_ingest_and_validate(batch_path=str(latest), batch_date=batch_date)
-        flow_detect_drift(batch_date=batch_date, force_retrain=args.force_retrain)
+
+        # Drift-check the NEWEST batch. If it triggers, the retrain subflow loads
+        # training data via _load_all_processed_data, which keeps only mature
+        # batches — so drift stays current while the model still learns from
+        # fully-observed outcomes.
+        flow_detect_drift(batch_date=newest_date, force_retrain=args.force_retrain)

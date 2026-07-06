@@ -37,6 +37,7 @@ DAILY SCHEDULE (Prefect 2)
                           ▼
 ┌─────────────────────────────────────────────────────────┐
 │  Flow 2: detect_drift   (3am daily)                     │
+│  runs on the NEWEST batch (unsupervised — no labels)    │
 │  ├── KS test per numeric feature (scipy)                │
 │  ├── PSI per numeric feature (Basel II standard)        │
 │  ├── Prediction score PSI (model output drift)          │
@@ -49,6 +50,7 @@ DAILY SCHEDULE (Prefect 2)
                           ▼
 ┌─────────────────────────────────────────────────────────┐
 │  Flow 3: retrain_validate_promote                       │
+│  trains on MATURE batches only (labels observed)        │
 │  ├── Parameterized training window (auto-sized)         │
 │  ├── Optuna HPO — 30 trials, TPE sampler, median pruner │
 │  │     all trials logged as MLflow child runs           │
@@ -325,6 +327,9 @@ The Space's public URL is `https://<user>-credit-risk-model-api.hf.space`; `/doc
 
 **"How do you know when to retrain?"**
 Three signals: KS test per feature (non-parametric distributional test), PSI per feature (Basel II regulatory standard), and PSI on model prediction scores. Any two KS-drifted features OR any PSI-critical feature → retrain triggered automatically.
+
+**"Why do drift monitoring and retraining look at different batches?"**
+Because they have opposite data needs, and conflating them is a classic label-leakage trap. Drift detection is *unsupervised* — it compares feature distributions and needs no labels, so it monitors the **newest** batch (the freshest picture of incoming applicants). Retraining is *supervised* — it needs *observed* outcomes, and recent loans haven't had time to default yet, so a fresh batch shows an artificially deflated ~1–5% default rate versus the ~20% a batch settles at once mature. Training on that immature tail teaches the model defaults are rarer than they are, biasing it to under-predict risk — the dangerous direction for credit. So `--flow full` **decouples** the two: drift runs on the latest calendar batch, while retraining selects and trains only on batches whose positive rate clears a label-maturity floor (`MATURE_POS_RATE_FLOOR = 0.10` in `pipelines/flows.py`). This floor sits deliberately above the ingest DQ gate's 2% degenerate-class floor: the DQ gate rejects *corrupt* all-one-class data; the maturity floor rejects *incomplete* labels.
 
 **"Why KS test instead of just PSI?"**
 PSI is sensitive to bin width choices and can miss shifts that happen between bin edges. KS is non-parametric — no binning, exact test statistic. Using both gives higher signal coverage. Same reason Basel III uses PSI while academic papers prefer KS.
