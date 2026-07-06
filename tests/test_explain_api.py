@@ -71,3 +71,14 @@ def test_key_never_appears_in_response_or_logs(caplog):
     assert r.status_code == 502
     assert _KEY not in r.text
     assert _KEY not in caplog.text
+
+
+def test_explain_rejects_oversized_report():
+    """T12: an oversized drift_report is a 422 (body-size cap), not accepted."""
+    big = {"blob": "a" * 300_000}
+    r = _client().post(
+        "/drift/explain",
+        json={"provider": "groq", "model": "llama-3.3-70b-versatile", "drift_report": big},
+        headers={"X-LLM-Key": _KEY},
+    )
+    assert r.status_code == 422

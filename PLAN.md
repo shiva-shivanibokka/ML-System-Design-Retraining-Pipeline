@@ -1,8 +1,16 @@
 # Fix Plan — ML-System-Design-Retraining-Pipeline
 
-Generated from repo-bug-audit on 2026-07-06. 22 tasks, ordered by severity (Major first). Derived from `AUDIT.md`. Nothing here has been applied yet.
+> **STATUS: ALL 22 TASKS APPLIED (2026-07-06).** Every task below (7 Major, 15
+> Minor) is implemented with regression tests. Verification: 110 pytest tests
+> pass; frontend `tsc --noEmit` + `next build` green. See git history for the
+> per-batch commits. One follow-on remains a product decision, not a code gap:
+> Task 1's maturity filter is wired and tested in the build code, but
+> regenerating + `dvc push`-ing the live datasets (which reshapes the batch
+> range and the drift demo) awaits your go-ahead on the cutoff.
 
-**Global verification after each task:** `python -m pytest -p no:warnings -q` (96 pass) + `ruff check .` clean; frontend tasks also `cd frontend && npm run typecheck && npm run build`.
+Generated from repo-bug-audit on 2026-07-06. 22 tasks, ordered by severity (Major first). Derived from `AUDIT.md`.
+
+**Global verification after each task:** `python -m pytest -p no:warnings -q` + `ruff check .` clean; frontend tasks also `cd frontend && npm run typecheck && npm run build`.
 
 > Supersedes the 2026-07-03 plan (fully applied — see git history). These are new/remaining findings.
 

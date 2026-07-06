@@ -6,17 +6,30 @@ from the environment.
 """
 from __future__ import annotations
 
+import json
 from typing import Optional
 
-from fastapi import APIRouter, Header, HTTPException
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, Header, HTTPException
+from pydantic import BaseModel, field_validator
 
 from alerting.llm_analyst import summarize_drift
 from alerting.llm_providers import PROVIDERS, list_models
 from configs.logging_config import get_logger
+from serving.rate_limit import make_rate_limiter
 
 logger = get_logger(__name__)
 router = APIRouter()
+
+# BYOK explain calls out to a paid LLM per request — cap per-client rate, and
+# bound the request body so a multi-MB report can't be used to amplify memory.
+_explain_rate_limit = make_rate_limiter(max_requests=20, window_seconds=60)
+_MAX_REPORT_BYTES = 256_000
+
+
+def _cap_size(v: Optional[dict], field: str) -> Optional[dict]:
+    if v is not None and len(json.dumps(v, default=str)) > _MAX_REPORT_BYTES:
+        raise ValueError(f"{field} exceeds the {_MAX_REPORT_BYTES // 1000}KB limit")
+    return v
 
 
 class ExplainRequest(BaseModel):
@@ -25,6 +38,16 @@ class ExplainRequest(BaseModel):
     drift_report: dict
     model_card: Optional[dict] = None
 
+    @field_validator("drift_report")
+    @classmethod
+    def _cap_report(cls, v: dict) -> dict:
+        return _cap_size(v, "drift_report")
+
+    @field_validator("model_card")
+    @classmethod
+    def _cap_card(cls, v: Optional[dict]) -> Optional[dict]:
+        return _cap_size(v, "model_card")
+
 
 @router.get("/providers")
 def providers() -> dict:
@@ -32,7 +55,7 @@ def providers() -> dict:
     return list_models()
 
 
-@router.post("/drift/explain")
+@router.post("/drift/explain", dependencies=[Depends(_explain_rate_limit)])
 def explain(
     req: ExplainRequest,
     x_llm_key: Optional[str] = Header(default=None, alias="X-LLM-Key"),
@@ -46,6 +69,13 @@ def explain(
         )
     if not x_llm_key or not x_llm_key.strip():
         raise HTTPException(status_code=400, detail="Missing X-LLM-Key header")
+    # Validate the client-supplied report shape up front so a malformed body is a
+    # clear 422 (client error), not a misleading 502 blamed on the provider.
+    feature_results = req.drift_report.get("feature_results")
+    if feature_results is not None and not isinstance(feature_results, list):
+        raise HTTPException(
+            status_code=422, detail="drift_report.feature_results must be a list"
+        )
     try:
         narrative = summarize_drift(
             req.drift_report,

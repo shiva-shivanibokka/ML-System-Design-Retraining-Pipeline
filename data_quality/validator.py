@@ -367,7 +367,11 @@ class DataQualityValidator:
         for col, valid_vals in self.cfg.categorical_value_checks.items():
             if col not in df.columns:
                 continue
-            invalid_mask = ~df[col].isin(valid_vals)
+            # Exclude nulls: a NaN is not an "unexpected value" — it's a missing
+            # value already caught by the dedicated null-rate check. Counting it
+            # here double-fails the column (asymmetric with the numeric range
+            # check, which also excludes true nulls).
+            invalid_mask = df[col].notna() & ~df[col].isin(valid_vals)
             invalid_rate = invalid_mask.mean()
             ok = invalid_rate <= 0.01
             result.add_check(

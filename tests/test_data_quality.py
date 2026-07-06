@@ -46,6 +46,20 @@ def test_clean_batch_passes_pandas_checks():
     assert r.passed is True, r.failure_reasons
 
 
+def test_categorical_check_excludes_nulls():
+    """T20: nulls in a categorical column are not 'invalid values' — they're
+    caught by the dedicated null-rate check. With all non-null values valid, the
+    categorical check must pass (no double-fail)."""
+    v = DataQualityValidator()
+    df = canonical_frame(n=500, seed=0)
+    df.loc[:9, "home_ownership"] = None  # 2% nulls, every other value valid
+    r = _blank_result(df)
+    v._run_pandas_checks(df, r)
+    cat = next(c for c in r.checks if c.name == "categorical_home_ownership")
+    assert bool(cat.passed) is True
+    assert "0.00%" in cat.observed_value  # nulls not counted as invalid
+
+
 def test_missing_column_fails():
     v = DataQualityValidator()
     df = canonical_frame(n=500, seed=0).drop(columns=["credit_score"])

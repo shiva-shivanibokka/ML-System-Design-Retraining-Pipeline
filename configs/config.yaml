@@ -201,7 +201,11 @@ model_card:
 # MLflow
 # -----------------------------------------------------------------------------
 mlflow:
-  tracking_uri: "http://mlflow:5000"
+  # Tracking URI resolution order (see configs/settings.py): the MLFLOW_TRACKING_URI
+  # env var wins; otherwise it falls back to tracking_uri_local. Docker/Compose and
+  # the HF Space set MLFLOW_TRACKING_URI explicitly (e.g. http://mlflow:5000 or the
+  # DagsHub URL), so there is no separate Docker key here — a stray one was dead
+  # config that silently did nothing.
   tracking_uri_local: "http://localhost:5000"
   experiment_name: "credit_risk_retraining"
   model_name: "credit_risk_lgbm"

@@ -9,10 +9,12 @@ Architecture mirrors what Uber Michelangelo and Airbnb Bighead do:
    minimum sample size requirements. This avoids the common mistake of
    having a fixed window that becomes inadequate as data volume changes.
 
-2. OPTUNA HPO (30 trials, TPE sampler, median pruner)
-   Every retrain kicks off a 30-trial hyperparameter search using
-   Tree-structured Parzen Estimator (TPE). The median pruner kills
-   unpromising trials early, saving ~40% of compute.
+2. OPTUNA HPO (30 trials, TPE sampler)
+   Every retrain kicks off a 30-trial hyperparameter search using the
+   Tree-structured Parzen Estimator (TPE). Per-trial compute is bounded by
+   LightGBM's own early_stopping (it halts boosting once validation AUC stops
+   improving); no Optuna trial pruner is used, since the single-shot AUC
+   objective reports no intermediate values for a pruner to act on.
    All 30 trials are logged to MLflow as child runs under the main run.
 
 3. LIGHTGBM (Gradient Boosted Decision Trees)
@@ -118,6 +120,12 @@ class TrainingResult:
     label_encoders: Dict[str, LabelEncoder]
     feature_names: List[str]
     model_uri: str = ""  # canonical MLflow model URI for registry.register_challenger
+    # The exact held-out test rows this run trained against (raw, pre-encoding).
+    # Validation MUST score both models on THIS set — re-deriving the split
+    # downstream only matches while the training-window step is a no-op; once it
+    # windows a subset, a re-split would overlap the challenger's training rows
+    # and inflate its measured AUC.
+    test_df: Optional["pd.DataFrame"] = None
 
 
 # ---------------------------------------------------------------------------
@@ -469,6 +477,7 @@ class CreditRiskTrainer:
             label_encoders=label_encoders,
             feature_names=feature_names,
             model_uri=model_info.model_uri,
+            test_df=test_df.reset_index(drop=True),
         )
 
     def _run_optuna(
@@ -486,13 +495,16 @@ class CreditRiskTrainer:
             # Sensible defaults if Optuna not installed
             return self._default_params(), 0, 1
 
+        # TPE sampler only. We intentionally do NOT attach a MedianPruner: pruning
+        # requires the objective to report intermediate values via trial.report()/
+        # should_prune(), which a single-shot AUC objective does not do, so the
+        # pruner would prune nothing. Per-trial compute is instead bounded by
+        # LightGBM's own early_stopping (see _build_optuna_objective).
         sampler = optuna.samplers.TPESampler(seed=settings.training.random_state)
-        pruner = optuna.pruners.MedianPruner(n_startup_trials=5, n_warmup_steps=10)
 
         study = optuna.create_study(
             direction=cfg.direction,
             sampler=sampler,
-            pruner=pruner,
         )
 
         objective = _build_optuna_objective(X_train, y_train, X_val, y_val)
@@ -512,13 +524,21 @@ class CreditRiskTrainer:
             len(study.trials),
         )
 
-        # Log study summary to MLflow
+        # Log the study summary to the parent run. Use the MlflowClient (targets
+        # the run by id) rather than a nested `start_run(run_id=parent_run_id)`:
+        # _run_optuna executes inside train()'s already-active run, so opening
+        # another run raised every time and the previous `except: pass` silently
+        # dropped these metrics.
         try:
-            with mlflow.start_run(run_id=parent_run_id):
-                mlflow.log_metric("optuna_best_val_auc", best.value)
-                mlflow.log_param("optuna_n_completed_trials", len(study.trials))
-        except Exception:
-            pass
+            from mlflow.tracking import MlflowClient
+
+            client = MlflowClient()
+            client.log_metric(parent_run_id, "optuna_best_val_auc", best.value)
+            client.log_param(
+                parent_run_id, "optuna_n_completed_trials", len(study.trials)
+            )
+        except Exception as e:
+            logger.warning("Could not log Optuna summary metrics: %s", e)
 
         return best.params, best.number, len(study.trials)
 

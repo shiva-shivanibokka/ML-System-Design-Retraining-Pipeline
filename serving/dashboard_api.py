@@ -7,7 +7,7 @@ import os
 import pandas as pd
 from fastapi import APIRouter
 
-from configs.logging_config import get_logger
+from configs.logging_config import get_logger, scrub_secrets
 from configs.settings import settings
 
 logger = get_logger(__name__)
@@ -76,7 +76,7 @@ def runs(limit: int = 20):
     try:
         df = _search_runs(limit)
     except Exception as e:
-        logger.warning("runs endpoint: MLflow unavailable: %s", e)
+        logger.warning("runs endpoint: MLflow unavailable: %s: %s", type(e).__name__, scrub_secrets(e))
         return []
     if df is None or df.empty:
         return []
@@ -94,7 +94,7 @@ def registry():
     try:
         return _registry_snapshot()
     except Exception as e:
-        logger.warning("registry endpoint: %s", e)
+        logger.warning("registry endpoint: %s: %s", type(e).__name__, scrub_secrets(e))
         return {"by_alias": {"champion": None, "archived": []}, "total_versions": 0}
 
 
@@ -129,7 +129,7 @@ def model_cards(limit: int = 20):
             return []
         return list(df["run_id"])
     except Exception as e:
-        logger.warning("model-cards list: %s", e)
+        logger.warning("model-cards list: %s: %s", type(e).__name__, scrub_secrets(e))
         return []
 
 
@@ -155,5 +155,5 @@ def drift_latest():
                 return rep
         return None
     except Exception as e:
-        logger.warning("drift latest: %s", e)
+        logger.warning("drift latest: %s: %s", type(e).__name__, scrub_secrets(e))
         return None

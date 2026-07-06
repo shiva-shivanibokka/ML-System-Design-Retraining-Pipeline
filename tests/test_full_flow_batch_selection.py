@@ -8,8 +8,12 @@
 These tests cover the batch-selection helper and the training-data loader that
 enforce the label-maturity floor.
 """
+import logging
+import types
+
 import pandas as pd
 
+import pipelines.flows as flows
 from configs.settings import settings
 from pipelines.flows import (
     MATURE_POS_RATE_FLOOR,
@@ -78,3 +82,27 @@ def test_training_data_falls_back_when_no_batch_is_mature(tmp_path, monkeypatch)
     monkeypatch.setattr(settings.dataset, "processed_dir", str(tmp_path))
     df = _load_all_processed_data()
     assert len(df) == 400  # both batches loaded (fallback)
+
+
+def test_task_validate_uses_trainer_holdout(monkeypatch):
+    """T8: validation must score on the trainer's ACTUAL held-out test_df
+    (carried in the TrainingResult), not a re-derived split — otherwise, once the
+    training-window step windows a subset, the re-split would overlap the
+    challenger's training rows and inflate its AUC."""
+    captured = {}
+
+    class _FakeValidator:
+        def validate(self, **kwargs):
+            captured.update(kwargs)
+            return types.SimpleNamespace(
+                promoted=False, challenger_auc=0.5, champion_auc=0.5,
+                auc_delta=0.0, slice_results=[],
+            )
+
+    monkeypatch.setattr(flows, "ModelValidator", _FakeValidator)
+    monkeypatch.setattr(flows, "get_run_logger", lambda: logging.getLogger("test"))
+
+    sentinel = pd.DataFrame({TARGET: [0, 1], "x": [1, 2]})
+    result = types.SimpleNamespace(test_df=sentinel)
+    flows.task_validate.fn(result, None, pd.DataFrame({TARGET: [0, 1, 0, 1]}), {})
+    assert captured["test_df"] is sentinel

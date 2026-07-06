@@ -4,7 +4,7 @@ from __future__ import annotations
 import hmac
 import os
 
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from configs.logging_config import get_logger
@@ -12,6 +12,7 @@ from configs.settings import settings
 from serving.dashboard_api import router as dashboard_router
 from serving.explain_api import router as explain_router
 from serving.model_loader import ChampionModel, load_champion
+from serving.rate_limit import make_rate_limiter
 from serving.schemas import CreditApplication, HealthResponse, PredictionResponse
 
 logger = get_logger(__name__)
@@ -112,7 +113,15 @@ def model_info() -> dict:
     return {"model_name": settings.mlflow.model_name, "model_version": champ.version}
 
 
-@app.post("/predict", response_model=PredictionResponse)
+# Public, does model inference on every call — cap per-client request rate.
+_predict_rate_limit = make_rate_limiter(max_requests=120, window_seconds=60)
+
+
+@app.post(
+    "/predict",
+    response_model=PredictionResponse,
+    dependencies=[Depends(_predict_rate_limit)],
+)
 def predict(application: CreditApplication) -> PredictionResponse:
     champ = _get_champion()
     if champ is None:

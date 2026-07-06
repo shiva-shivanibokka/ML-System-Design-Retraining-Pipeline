@@ -32,6 +32,11 @@ type DriftReport = {
 };
 
 function psiPill(status: string) {
+  // Unknown/missing status must read as "unknown" (neutral), not a blank green
+  // pill that understates risk on a drift page.
+  if (status !== "critical" && status !== "warning" && status !== "stable") {
+    return <span className="pill pill-neutral">—</span>;
+  }
   const cls = status === "critical" ? "pill-red" : status === "warning" ? "pill-amber" : "pill-green";
   return <span className={`pill ${cls}`}>{status}</span>;
 }

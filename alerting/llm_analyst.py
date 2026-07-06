@@ -16,10 +16,17 @@ logger = get_logger(__name__)
 
 
 def _build_prompt(drift_report: dict, model_card: dict | None) -> str:
+    # `drift_report` is arbitrary caller-supplied JSON — never hard-subscript it.
+    # A malformed entry must not raise (which the serving layer would otherwise
+    # mis-map to a 502 "provider unavailable"); skip unusable entries instead.
+    results = drift_report.get("feature_results", [])
+    if not isinstance(results, list):
+        results = []
     drifted = [
-        f"- {r['feature']}: PSI={r.get('psi_score')}, KS-drifted={r.get('ks_drifted')}"
-        for r in drift_report.get("feature_results", [])
-        if r.get("ks_drifted") or (r.get("psi_score", 0) or 0) >= 0.2
+        f"- {r.get('feature', '?')}: PSI={r.get('psi_score')}, KS-drifted={r.get('ks_drifted')}"
+        for r in results
+        if isinstance(r, dict)
+        and (r.get("ks_drifted") or (r.get("psi_score", 0) or 0) >= 0.2)
     ]
     card_blurb = ""
     if model_card:

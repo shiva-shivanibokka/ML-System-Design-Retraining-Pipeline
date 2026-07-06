@@ -8,6 +8,8 @@
 
 ## Summary
 
+> **RESOLUTION (2026-07-06): all 22 Major+Minor findings fixed with tests — see `PLAN.md` and git history. 110 tests pass; frontend build green.** The 6 Notes remain as documented observations. Task 1's maturity filter is applied in the build code; regenerating the live DVC datasets awaits a cutoff decision.
+
 - Total findings: 28 (7 Major · 15 Minor · 6 Note)
 - Auto-fixed (trivial-safe): **0** — every finding changes behavior, logging, or control flow, so none qualified for silent auto-fix. All are in `PLAN.md`.
 - Needs review (see `PLAN.md`): 22 (7 Major + 15 Minor). The 6 Notes are recorded here, not turned into tasks.

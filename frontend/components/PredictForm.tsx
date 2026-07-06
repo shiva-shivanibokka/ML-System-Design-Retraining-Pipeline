@@ -176,7 +176,10 @@ export default function PredictForm() {
         <div className="glass pad" style={{ marginTop: "1rem" }}>
           <div className="stat-title">Default probability</div>
           <div className="stat-value mono" style={{ fontSize: "2.25rem" }}>
-            {(result.default_probability * 100).toFixed(2)}%
+            {typeof result.default_probability === "number" &&
+            Number.isFinite(result.default_probability)
+              ? `${(result.default_probability * 100).toFixed(2)}%`
+              : "—"}
           </div>
           <p className="stat-sub">
             <span className={`pill ${result.default_prediction === 1 ? "pill-red" : "pill-green"}`}>

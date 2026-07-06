@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 import pandas as pd
 
-from configs.logging_config import get_logger
+from configs.logging_config import get_logger, scrub_secrets
 from serving.schemas import CreditApplication
 from training.trainer import prepare_features
 
@@ -32,5 +32,7 @@ def load_champion() -> "ChampionModel | None":
             return None
         return ChampionModel(booster=bundle.booster, encoders=bundle.encoders, version=bundle.version)
     except Exception as e:
-        logger.warning("Could not load champion: %s", e)
+        logger.warning(
+            "Could not load champion: %s: %s", type(e).__name__, scrub_secrets(e)
+        )
         return None

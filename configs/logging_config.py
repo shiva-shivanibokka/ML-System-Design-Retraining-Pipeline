@@ -3,10 +3,20 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import sys
 
 _CONFIGURED = False
 _FORMAT = "%(asctime)s | %(levelname)-7s | %(name)s | %(message)s"
+
+# Redact HTTP basic-auth credentials embedded in URLs (e.g. a DagsHub/MLflow
+# tracking URI carrying a token) before they can be written to logs.
+_CREDS_IN_URL = re.compile(r"(https?://)[^/\s:@]+:[^/\s@]+@")
+
+
+def scrub_secrets(text: object) -> str:
+    """Redact `user:pass@` credentials from a string (for safe error logging)."""
+    return _CREDS_IN_URL.sub(r"\1***:***@", str(text))
 
 
 def setup_logging(level: str | None = None) -> None:

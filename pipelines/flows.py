@@ -106,7 +106,9 @@ def _load_all_processed_data() -> pd.DataFrame:
     floor, fall back to all batches rather than train on nothing.
     """
     processed_dir = Path(settings.dataset.processed_dir)
-    files = sorted(processed_dir.glob("*.parquet"))
+    # Match batch_*.parquet only (consistent with drift/selection), so a stray
+    # non-batch parquet dropped in processed_dir can't silently join training.
+    files = sorted(processed_dir.glob("batch_*.parquet"))
     if files:
         mature = [f for f in files if _is_mature(_batch_pos_rate(f))]
         if mature:
@@ -494,15 +496,24 @@ def task_register_challenger(result):
 def task_validate(result, champion_model, df: pd.DataFrame, drift_report: dict):
     """Run all three validation gates."""
     logger = get_run_logger()
-    from sklearn.model_selection import train_test_split
 
-    target = settings.dataset.target_column
-    _, test_df = train_test_split(
-        df,
-        test_size=settings.training.test_split,
-        random_state=settings.training.random_state,
-        stratify=df[target],
-    )
+    # Validate on the trainer's ACTUAL held-out test set (carried in the
+    # TrainingResult), not a re-derived split. Re-splitting here only matched the
+    # trainer while the training-window step was a no-op; once it windows a
+    # subset, an independent re-split would overlap the challenger's training
+    # rows and inflate its measured AUC. Fall back to a re-split only for a
+    # legacy result that predates the test_df field.
+    test_df = getattr(result, "test_df", None)
+    if test_df is None:
+        from sklearn.model_selection import train_test_split
+
+        target = settings.dataset.target_column
+        _, test_df = train_test_split(
+            df,
+            test_size=settings.training.test_split,
+            random_state=settings.training.random_state,
+            stratify=df[target],
+        )
 
     validator = ModelValidator()
     decision = validator.validate(
@@ -631,12 +642,22 @@ def flow_retrain_validate_promote(
     # 1. Load all available training data
     df = task_load_training_data()
 
-    # 2. Train with HPO
-    result = task_train(df)
-
-    # 3. Load current champion for comparison
+    # 2. Load the current champion FIRST — it's needed to validate the challenger,
+    #    so a registry outage should fail fast here rather than after the expensive
+    #    HPO run. load_champion() returns None only for a genuinely-absent champion
+    #    (legitimate first run); it re-raises on connectivity errors, which we
+    #    surface with a clear message instead of an opaque post-training crash.
     registry = ModelRegistry()
-    champion_model = registry.load_champion()
+    try:
+        champion_model = registry.load_champion()
+    except Exception as e:
+        raise RuntimeError(
+            "Registry unreachable — cannot validate a challenger; aborting before "
+            f"training to avoid wasting HPO compute: {e}"
+        ) from e
+
+    # 3. Train with HPO
+    result = task_train(df)
 
     # 4. Register challenger in Staging
     challenger_mv = task_register_challenger(result)
