@@ -3,7 +3,6 @@ import math
 from pathlib import Path
 
 import pandas as pd
-
 import pytest
 
 from data.preprocess_lending_club import (
