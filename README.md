@@ -12,9 +12,11 @@ The core question this project answers:
 
 | Service | URL |
 |---|---|
-| Frontend dashboard (Vercel) | `<vercel-app-url>` |
-| Serving API docs (Hugging Face Space) | `<hf-space-url>/docs` |
-| MLflow experiment tracking (DagsHub) | `<dagshub-mlflow-url>` |
+| Frontend dashboard (Vercel) | https://ml-system-design-retraining-pipelin.vercel.app |
+| Serving API docs (Hugging Face Space) | https://shiva-1993-ml-retraining-pipeline.hf.space/docs |
+| MLflow experiment tracking (DagsHub) | https://dagshub.com/shiva-shivanibokka/ML-System-Design-Retraining-Pipeline/experiments |
+
+> The HF Space sleeps after inactivity — the first request may take ~30s to wake it, then responds normally.
 
 ---
 
@@ -306,20 +308,12 @@ The `MLFLOW_TRACKING_URI` env override already exists in `configs/settings.py` �
 
 ### Deploy the serving API to a Hugging Face Space
 
-1. Create a **Docker** Space named `credit-risk-model-api`.
-2. Add GitHub repo secrets `HF_TOKEN` (a write token) and `HF_SPACE_ID` (e.g. `your-user/credit-risk-model-api`).
+1. Create a **Docker** Space (this project's is `ml-retraining-pipeline`).
+2. Add GitHub repo secrets `HF_TOKEN` (a write token) and `HF_SPACE_ID` (e.g. `your-user/ml-retraining-pipeline`).
 3. In the Space's **Settings → Secrets**, set `MLFLOW_TRACKING_URI` / `MLFLOW_TRACKING_USERNAME` / `MLFLOW_TRACKING_PASSWORD`, `FRONTEND_ORIGINS` (your Vercel URL), and optionally `ANTHROPIC_API_KEY` / `SLACK_WEBHOOK_URL`.
 4. Push: the `deploy-space.yml` workflow syncs the app on every change to the serving code, or run `bash deploy/deploy_hf_space.sh` locally (needs `HF_TOKEN` + `HF_SPACE_ID` in your env).
 
-The Space's public URL is `https://<user>-credit-risk-model-api.hf.space`; `/docs` serves the Swagger UI.
-
-### Live demo
-
-| Resource | URL |
-|---|---|
-| Frontend (Vercel) | _<add after deploy>_ |
-| Serving API (HF Space `/docs`) | _<add after deploy>_ |
-| MLflow (DagsHub) | _<add after deploy>_ |
+The Space's public URL is `https://<user>-<space>.hf.space` (here, `https://shiva-1993-ml-retraining-pipeline.hf.space`); `/docs` serves the Swagger UI. The live links are in the [Live Demo](#live-demo) table at the top.
 
 ---
 

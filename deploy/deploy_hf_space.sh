@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Push the serving app to a Hugging Face Docker Space.
-# Requires: HF_TOKEN (write), HF_SPACE_ID like "username/credit-risk-model-api".
+# Requires: HF_TOKEN (write), HF_SPACE_ID like "username/ml-retraining-pipeline".
 # Portable: uses `git archive` (no rsync) so it runs on Windows Git Bash + Linux CI.
 set -euo pipefail
 : "${HF_TOKEN:?set HF_TOKEN}"

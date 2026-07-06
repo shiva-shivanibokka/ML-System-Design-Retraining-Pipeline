@@ -17,7 +17,7 @@ npm run dev                  # http://localhost:3000
 
 | Variable | Required | Description |
 |---|---|---|
-| `NEXT_PUBLIC_API_URL` | No (falls back to empty-state UI) | Base URL of the serving API (HF Space), no trailing slash — e.g. `https://<user>-credit-risk-model-api.hf.space` |
+| `NEXT_PUBLIC_API_URL` | No (falls back to empty-state UI) | Base URL of the serving API (HF Space), no trailing slash — e.g. `https://shiva-1993-ml-retraining-pipeline.hf.space` |
 
 With `NEXT_PUBLIC_API_URL` unset, every page still builds and renders — the typed API
 client (`lib/api.ts`) short-circuits to fallback/empty data instead of making a network
