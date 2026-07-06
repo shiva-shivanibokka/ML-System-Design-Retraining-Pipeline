@@ -3,6 +3,8 @@ import SectionHeader from "@/components/SectionHeader";
 import { fmtNum, humanizeCohort } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
+// Allow the serverless render to wait out a cold-start wake of the HF Space.
+export const maxDuration = 30;
 
 // Deltas at or beyond this magnitude saturate the bar width and read as a
 // hard fail rather than a soft amber warning.

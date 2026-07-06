@@ -10,6 +10,8 @@ import SectionHeader from "@/components/SectionHeader";
 import { glossary } from "@/lib/glossary";
 
 export const dynamic = "force-dynamic";
+// Allow the serverless render to wait out a cold-start wake of the HF Space.
+export const maxDuration = 30;
 
 export default async function OverviewPage() {
   const [health, runs, registry, drift, card] = await Promise.all([

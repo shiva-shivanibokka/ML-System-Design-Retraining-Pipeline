@@ -421,7 +421,7 @@ class DriftDetector:
         psi_sig = report.n_features_psi_drifted > 0
         if psi_sig:
             drifted_feats = [r.feature for r in report.feature_results if r.psi_drifted]
-            reasons.append(f"PSI critical in: {drifted_feats}")
+            reasons.append(f"PSI critical in: {', '.join(drifted_feats)}")
 
         # Prediction drift signal (None when not computed — excluded from decision)
         pred_sig = (

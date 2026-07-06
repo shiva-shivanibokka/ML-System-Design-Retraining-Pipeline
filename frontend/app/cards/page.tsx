@@ -5,7 +5,7 @@ import { deriveDecision } from "@/lib/derive";
 import GateCheck from "@/components/GateCheck";
 import MetricTile from "@/components/MetricTile";
 import SectionHeader from "@/components/SectionHeader";
-import { fmtNum, numOr0, humanizeLabel } from "@/lib/format";
+import { fmtNum, numOr0, humanizeLabel, fmtParam, prettyTriggerReason } from "@/lib/format";
 import { glossary } from "@/lib/glossary";
 
 // Maps a model-card metric key to its glossary id, for the "?" info tooltip.
@@ -18,8 +18,10 @@ const METRIC_GLOSSARY_IDS: Record<string, string> = {
 };
 
 export const dynamic = "force-dynamic";
+// Allow the serverless render to wait out a cold-start wake of the HF Space.
+export const maxDuration = 30;
 
-// Fallback for the two sections with no bespoke renderer (free-form JSON blobs).
+// Fallback for a section with no bespoke renderer (free-form JSON blob).
 function JsonBlock({ data }: { data: Record<string, unknown> | undefined }) {
   if (!data || Object.keys(data).length === 0) {
     return <div className="empty-state">Not available.</div>;
@@ -27,10 +29,61 @@ function JsonBlock({ data }: { data: Record<string, unknown> | undefined }) {
   return <pre className="json-block">{JSON.stringify(data, null, 2)}</pre>;
 }
 
-function kvValue(value: unknown): string {
-  if (value === null || value === undefined) return "—";
-  if (typeof value === "object") return JSON.stringify(value);
-  return String(value);
+// The drift snapshot that triggered this retrain — rendered as readable stats
+// instead of raw JSON. Shape mirrors the drift report (see drift/detector.py).
+type DriftAtTrigger = {
+  batch_date?: string;
+  n_reference_rows?: number;
+  n_current_rows?: number;
+  n_features_ks_drifted?: number;
+  n_features_psi_drifted?: number;
+  retrain_triggered?: boolean;
+  trigger_reasons?: string[];
+};
+
+function DriftTriggerPanel({ data }: { data: DriftAtTrigger | undefined }) {
+  if (!data || Object.keys(data).length === 0) {
+    return <div className="empty-state">No drift snapshot recorded for this run.</div>;
+  }
+  return (
+    <div className="card">
+      <p className="stat-sub" style={{ marginTop: 0 }}>
+        The drift the pipeline saw on batch <b>{data.batch_date ?? "—"}</b> that set off this retrain
+        — {numOr0(data.n_current_rows).toLocaleString()} incoming rows vs{" "}
+        {numOr0(data.n_reference_rows).toLocaleString()} reference rows.
+      </p>
+      <div className="grid">
+        <MetricTile
+          label="KS-Drifted Features"
+          value={data.n_features_ks_drifted ?? "—"}
+          tone={numOr0(data.n_features_ks_drifted) > 0 ? "red" : "green"}
+          info={glossary("ks_drift")}
+        />
+        <MetricTile
+          label="PSI-Critical Features"
+          value={data.n_features_psi_drifted ?? "—"}
+          tone={numOr0(data.n_features_psi_drifted) > 0 ? "red" : "green"}
+          info={glossary("psi")}
+        />
+        <MetricTile
+          label="Retrain Triggered"
+          value={data.retrain_triggered ? "YES" : "No"}
+          tone={data.retrain_triggered ? "red" : "green"}
+          info={glossary("retrain_triggered")}
+        />
+      </div>
+      {data.trigger_reasons && data.trigger_reasons.length > 0 && (
+        <div className="decision-reasons" style={{ marginTop: "1rem" }}>
+          <div className="eyebrow">Why it triggered</div>
+          <ul>
+            {data.trigger_reasons.map((r, i) => (
+              <li key={i}>{prettyTriggerReason(r)}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default async function ModelCardsPage({
@@ -112,7 +165,7 @@ export default async function ModelCardsPage({
                       return (
                         <MetricTile
                           key={key}
-                          label={key}
+                          label={humanizeLabel(key)}
                           value={fmtNum(value)}
                           info={glossaryId ? glossary(glossaryId) : undefined}
                         />
@@ -215,11 +268,11 @@ export default async function ModelCardsPage({
                 {Object.keys(hyperparams).length === 0 ? (
                   <div className="empty-state">No hyperparameters recorded.</div>
                 ) : (
-                  <div className="card kv">
+                  <div className="card param-grid">
                     {Object.entries(hyperparams).map(([key, value]) => (
-                      <div className="kv-row" key={key}>
-                        <span className="kv-key">{key}</span>
-                        <span className="mono">{kvValue(value)}</span>
+                      <div className="param-cell" key={key}>
+                        <span className="param-key">{humanizeLabel(key)}</span>
+                        <span className="param-val mono">{fmtParam(value)}</span>
                       </div>
                     ))}
                   </div>
@@ -233,7 +286,7 @@ export default async function ModelCardsPage({
 
               <section>
                 <h2>Drift at Trigger</h2>
-                <JsonBlock data={card.drift_at_trigger} />
+                <DriftTriggerPanel data={card.drift_at_trigger as DriftAtTrigger | undefined} />
               </section>
             </>
           )}

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { api } from "@/lib/api";
+import { humanizeLabel } from "@/lib/format";
 
 type FormState = {
   annual_income: number;
@@ -122,7 +123,7 @@ export default function PredictForm() {
             onChange={(e) => updateText("loan_purpose", e.target.value)}
           >
             {LOAN_PURPOSE_OPTIONS.map((v) => (
-              <option key={v} value={v}>{v}</option>
+              <option key={v} value={v}>{humanizeLabel(v)}</option>
             ))}
           </select>
         </div>

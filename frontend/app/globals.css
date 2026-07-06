@@ -45,25 +45,28 @@ body::after {
   pointer-events: none;
 }
 
-/* static base wash */
+/* base wash — gently panning color field */
 body::before {
-  inset: 0;
+  inset: -12%;
   background:
-    radial-gradient(60% 40% at 50% -10%, rgba(110, 168, 255, 0.16), transparent 70%),
-    radial-gradient(45% 35% at 85% 0%, rgba(139, 92, 246, 0.12), transparent 70%),
+    radial-gradient(60% 40% at 50% -10%, rgba(110, 168, 255, 0.22), transparent 70%),
+    radial-gradient(45% 35% at 85% 0%, rgba(139, 92, 246, 0.18), transparent 70%),
+    radial-gradient(42% 40% at 8% 18%, rgba(62, 207, 142, 0.10), transparent 70%),
     var(--bg);
+  animation: aurora-pan 34s ease-in-out infinite alternate;
+  will-change: transform;
 }
 
-/* slow-drifting aurora blobs — subtle background motion (paused under
+/* drifting aurora blobs — the main background motion (paused under
    prefers-reduced-motion via the global media block at the end of this file) */
 body::after {
   inset: -25%;
   background:
-    radial-gradient(26% 26% at 22% 28%, rgba(110, 168, 255, 0.16), transparent 60%),
-    radial-gradient(24% 24% at 78% 62%, rgba(139, 92, 246, 0.15), transparent 60%),
-    radial-gradient(22% 22% at 52% 88%, rgba(62, 207, 142, 0.09), transparent 60%);
-  filter: blur(48px);
-  animation: aurora-drift 28s ease-in-out infinite alternate;
+    radial-gradient(26% 26% at 22% 28%, rgba(110, 168, 255, 0.26), transparent 60%),
+    radial-gradient(24% 24% at 78% 62%, rgba(139, 92, 246, 0.24), transparent 60%),
+    radial-gradient(22% 22% at 52% 88%, rgba(62, 207, 142, 0.15), transparent 60%);
+  filter: blur(52px);
+  animation: aurora-drift 22s ease-in-out infinite alternate;
   will-change: transform;
 }
 
@@ -72,10 +75,19 @@ body::after {
     transform: translate3d(0, 0, 0) scale(1) rotate(0deg);
   }
   50% {
-    transform: translate3d(2.5%, -2%, 0) scale(1.1) rotate(3deg);
+    transform: translate3d(3.5%, -2.5%, 0) scale(1.12) rotate(4deg);
   }
   100% {
-    transform: translate3d(-2%, 2.5%, 0) scale(1.05) rotate(-3deg);
+    transform: translate3d(-2.5%, 3.5%, 0) scale(1.06) rotate(-4deg);
+  }
+}
+
+@keyframes aurora-pan {
+  0% {
+    transform: translate3d(-2%, -1.5%, 0) scale(1.05);
+  }
+  100% {
+    transform: translate3d(2%, 1.5%, 0) scale(1.12);
   }
 }
 
@@ -401,9 +413,9 @@ p.section-sub {
 }
 
 .container {
-  max-width: 1100px;
+  max-width: 1280px;
   margin: 0 auto;
-  padding: 1.75rem 1.5rem 4rem;
+  padding: 1.75rem 2rem 4rem;
 }
 
 /* ---------- card / grid / stats ---------- */
@@ -474,6 +486,36 @@ p.section-sub {
 
 .kv-key {
   color: var(--text-dim);
+}
+
+/* ---------- hyperparameter grid (labelled cells) ---------- */
+
+.param-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 0.75rem;
+}
+
+.param-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.param-key {
+  color: var(--text-dim);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.param-val {
+  font-size: 1.05rem;
+  font-weight: 600;
 }
 
 /* ---------- tables ---------- */

@@ -2,10 +2,12 @@ import { api } from "@/lib/api";
 import DriftExplainer from "@/components/DriftExplainer";
 import MetricTile from "@/components/MetricTile";
 import SectionHeader from "@/components/SectionHeader";
-import { fmtNum, numOr0 } from "@/lib/format";
+import { fmtNum, numOr0, humanizeLabel, prettyTriggerReason } from "@/lib/format";
 import { glossary } from "@/lib/glossary";
 
 export const dynamic = "force-dynamic";
+// Allow the serverless render to wait out a cold-start wake of the HF Space.
+export const maxDuration = 30;
 
 type FeatureDriftResult = {
   feature: string;
@@ -64,7 +66,8 @@ export default async function DriftPage() {
           {report.retrain_triggered && (
             <div className="glass banner banner-red">
               <b>Retrain triggered.</b>{" "}
-              {report.trigger_reasons?.join(" · ") || "Drift crossed the configured threshold."}
+              {report.trigger_reasons?.map(prettyTriggerReason).join(" · ") ||
+                "Drift crossed the configured threshold."}
             </div>
           )}
 
@@ -113,7 +116,7 @@ export default async function DriftPage() {
                 <tbody>
                   {sortedFeatures.map((r) => (
                     <tr key={r.feature}>
-                      <td>{r.feature}</td>
+                      <td>{humanizeLabel(r.feature)}</td>
                       <td>
                         <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", minWidth: "140px" }}>
                           <span className="mono">{fmtNum(r.ks_statistic)}</span>

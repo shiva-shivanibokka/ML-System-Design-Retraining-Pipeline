@@ -8,7 +8,7 @@ _DRIFT = {
     "batch_date": "2026-06-29",
     "n_features_ks_drifted": 3,
     "n_features_psi_drifted": 2,
-    "trigger_reasons": ["PSI critical in: ['credit_score', 'debt_to_income']"],
+    "trigger_reasons": ["PSI critical in: credit_score, debt_to_income"],
     "feature_results": [
         {"feature": "credit_score", "psi_score": 0.31, "ks_drifted": True},
         {"feature": "debt_to_income", "psi_score": 0.27, "ks_drifted": True},

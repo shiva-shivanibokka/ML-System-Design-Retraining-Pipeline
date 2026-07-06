@@ -5,6 +5,8 @@ import MetricTile from "@/components/MetricTile";
 import { glossary } from "@/lib/glossary";
 
 export const dynamic = "force-dynamic";
+// Allow the serverless render to wait out a cold-start wake of the HF Space.
+export const maxDuration = 30;
 
 export default async function ServingPage() {
   const health = await api.health();

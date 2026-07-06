@@ -1,7 +1,14 @@
 export default function Chart({
   values, kind = "area", stroke = "var(--accent)", threshold, height = 90, ariaLabel = "trend",
 }: { values: number[]; kind?: "area" | "line"; stroke?: string; threshold?: number; height?: number; ariaLabel?: string }) {
-  if (values.length < 2) return <div className="empty-state">Not enough data to plot a trend yet.</div>;
+  if (values.length < 2)
+    return (
+      <div className="empty-state">
+        {values.length === 0
+          ? "No runs loaded yet — the model server may be waking from sleep. Refresh in a few seconds."
+          : "Only one run so far — at least two are needed to plot a trend."}
+      </div>
+    );
   const width = 640;
   const bounds = threshold !== undefined ? [threshold] : [];
   const min = Math.min(...values, ...bounds);

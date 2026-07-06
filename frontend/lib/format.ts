@@ -28,6 +28,31 @@ export function humanizeLabel(key: string): string {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+// Clean a raw drift trigger-reason string for display: strip any leftover
+// Python-list punctuation (older artifacts stored `['a', 'b']`) and turn
+// snake_case feature names into spaced words, without title-casing the whole
+// sentence (keeps "KS"/"PSI"/"threshold" intact).
+// "PSI critical in: ['credit_score', 'revolving_utilization']"
+//   -> "PSI critical in: credit score, revolving utilization"
+export function prettyTriggerReason(reason: string): string {
+  return String(reason)
+    .replace(/[[\]']/g, "")
+    .replace(/_/g, " ")
+    .trim();
+}
+
+// Format a hyperparameter value for a compact table: round long floats to a
+// readable precision, leave integers/strings as-is.
+// 0.13037762006256165 -> "0.1304", 328 -> "328", "none" -> "none".
+export function fmtParam(value: unknown): string {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Number.isInteger(value) ? String(value) : Number(value.toPrecision(4)).toString();
+  }
+  if (value === null || value === undefined) return "—";
+  if (typeof value === "object") return JSON.stringify(value);
+  return String(value);
+}
+
 // Turn a cohort key "credit_grade=A" / "income_bracket=very_high" into a
 // readable "Credit Grade · A" / "Income Bracket · Very High".
 export function humanizeCohort(key: string): string {

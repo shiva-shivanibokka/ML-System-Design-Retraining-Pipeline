@@ -5,7 +5,14 @@ const BASE = process.env.NEXT_PUBLIC_API_URL ?? "";
 // server render of a force-dynamic page indefinitely — the Vercel function never
 // returns and the page never loads. With a timeout, a hang surfaces as an
 // AbortError caught below and degrades to the endpoint's empty-state fallback.
-const REQUEST_TIMEOUT_MS = 6000;
+//
+// Set to 15s (not a few seconds) because the serving API is a free-tier Hugging
+// Face Space that sleeps after inactivity: the first request after a sleep has
+// to wake the container (~10-20s). Too short a timeout aborts that wake and the
+// page renders empty ("Not enough data" charts) even though the data exists.
+// The pages that call this set `maxDuration = 30` so the Vercel function is
+// allowed to wait this long.
+const REQUEST_TIMEOUT_MS = 15000;
 
 async function get<T>(path: string, fallback: T): Promise<T> {
   if (!BASE) return fallback;

@@ -6,6 +6,8 @@ import Timeline, { type TimelineItem } from "@/components/Timeline";
 import { formatStartTime, fmtNum } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
+// Allow the serverless render to wait out a cold-start wake of the HF Space.
+export const maxDuration = 30;
 
 export default async function RetrainsPage() {
   const runs = await api.runs(50);
