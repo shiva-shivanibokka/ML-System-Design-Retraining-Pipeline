@@ -386,30 +386,40 @@ p.section-sub {
   position: relative;
   color: var(--text-dim);
   font-size: 0.92rem;
-  padding-bottom: 0.2rem;
+  padding: 0.32rem 0.6rem;
+  border-radius: 8px;
+  transition: color 0.15s ease, background 0.15s ease;
 }
 
 .topbar nav a::after {
   content: "";
   position: absolute;
-  left: 0;
+  left: 0.6rem;
   right: 100%;
-  bottom: 0;
+  bottom: 0.1rem;
   height: 2px;
   background: var(--grad);
   border-radius: 2px;
   transition: right 0.2s ease;
 }
 
-.topbar nav a:hover,
+.topbar nav a:hover {
+  color: var(--text);
+  text-decoration: none;
+}
+
+/* Active tab: unmistakable — brighter text, a tinted pill, and the full
+   gradient underline, so the current page always stands out in the header. */
 .topbar nav a.active {
   color: var(--text);
+  background: rgba(110, 168, 255, 0.14);
+  font-weight: 600;
   text-decoration: none;
 }
 
 .topbar nav a:hover::after,
 .topbar nav a.active::after {
-  right: 0;
+  right: 0.6rem;
 }
 
 .container {

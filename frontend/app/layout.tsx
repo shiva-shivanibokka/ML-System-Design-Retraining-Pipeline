@@ -1,17 +1,11 @@
 import "./globals.css";
-import Link from "next/link";
+import Nav from "@/components/Nav";
 import { display, body, mono } from "./fonts";
 
 export const metadata = {
   title: "ML Retraining Pipeline — Credit Risk Demo",
   description: "An automated, drift-triggered ML retraining pipeline.",
 };
-
-const NAV: [string, string][] = [
-  ["/", "Overview"], ["/drift", "Drift"], ["/retrains", "Retrains"],
-  ["/registry", "Registry"], ["/fairness", "Fairness"],
-  ["/cards", "Model Cards"], ["/serving", "Serving"],
-];
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -25,7 +19,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <span className="brand-sub">credit-risk model · LightGBM + Optuna</span>
             </span>
           </div>
-          <nav>{NAV.map(([href, label]) => <Link key={href} href={href}>{label}</Link>)}</nav>
+          <Nav />
         </header>
         <main className="container">{children}</main>
       </body>
