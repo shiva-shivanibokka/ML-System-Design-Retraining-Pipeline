@@ -120,7 +120,7 @@ no `anthropic` package, or any API error — and the pipeline continues unaffect
 | Data quality gates before training | Great Expectations suite (schema + nulls + ranges + categoricals) | Airbnb Chronon |
 | Parameterized training window | Auto-sized window: grows until `auto_min_rows` satisfied, capped at `auto_max_days` | Uber Michelangelo |
 | Bootstrap CI for promotion | 1000-sample bootstrap of holdout AUC; 5th percentile must exceed 0 | Netflix model promotion |
-| Slice-based validation | 4 cohort dimensions (income, credit grade, purpose, age); reject if any degrades > 2% | Google TFX / Uber |
+| Slice-based validation | 4 cohort dimensions, 21 cohorts (income, credit grade, loan purpose, loan term); reject if any degrades > 2% | Google TFX / Uber |
 | Credit risk metrics | KS Statistic + Gini Coefficient — the Basel II/III standard metrics (not just AUC) | Basel II framework |
 | Model card auto-generation | JSON artifact with features, metrics, slices, drift context, decision | Google Model Cards (2019) |
 | Slack alerting | Every pipeline event (drift, DQ failure, retrain, promote, reject) | Standard MLOps |
@@ -171,13 +171,25 @@ A challenger must pass **all three** to be promoted:
 Sample 1,000 bootstrap replicates of the holdout set. Compute (challenger_AUC − champion_AUC) for each. If the 5th percentile > 0 → challenger is statistically better at 95% confidence.
 
 **Gate 2 — Slice Validation**
-Evaluate on 4 cohort dimensions (16 slices total):
-- Income bracket: low / medium / high / very_high
-- Credit grade: A / B / C / D / E
-- Loan purpose: home / car / personal / business / education
-- Age group: young / middle / senior / elderly
+Evaluate on 4 cohort dimensions, **21 cohorts** in total — the exact list in
+`configs/config.yaml` under `dataset.validation_slices`:
+- Income bracket (4): low / medium / high / very_high
+- Credit grade (7): A / B / C / D / E / F / G
+- Loan purpose (8): debt_consolidation / credit_card / home_improvement /
+  major_purchase / medical / small_business / car / other
+- Loan term (2): 36 / 60 months
 
-If ANY slice degrades > 2% AUC vs champion → REJECTED.
+There is **no age dimension** — Lending Club does not publish borrower age, and
+slicing a credit model on age would raise fair-lending questions this project
+does not attempt to answer. An earlier version of this section listed one, along
+with a credit-grade range and a loan-purpose list that did not match the config
+either; `tests/test_readme_slice_claims.py` now pins this section to the config
+so the two cannot drift apart again.
+
+A cohort is only scored when it has at least `min_slice_size` rows and is not
+label-degenerate, so a given run typically evaluates fewer than 21.
+
+If ANY evaluated slice degrades > 2% AUC vs champion → REJECTED.
 
 **Gate 3 — Hard Floor**
 Challenger AUC must exceed champion AUC by at least +0.005. Prevents promoting a model that is "statistically better" purely due to noise on a small test set.
@@ -266,13 +278,19 @@ prefect server start
 
 ### 4. Run the full pipeline
 
+Run these as **modules** (`python -m pipelines.flows`), not as file paths.
+`python pipelines/flows.py` puts `pipelines/` on `sys.path` instead of the repo
+root, so the first absolute import fails with
+`ModuleNotFoundError: No module named 'alerting'`. The `-m` form sets the repo
+root as the working package, which is what every absolute import here assumes.
+
 ```bash
 # Run all three flows end-to-end (simulates one full day)
-python pipelines/flows.py --flow full
+python -m pipelines.flows --flow full
 
 # Or run individual flows:
-python pipelines/flows.py --flow drift --force-retrain   # skip drift check, go straight to retrain
-python pipelines/flows.py --flow retrain                 # retrain only
+python -m pipelines.flows --flow drift --force-retrain   # skip drift check, go straight to retrain
+python -m pipelines.flows --flow retrain                 # retrain only
 ```
 
 ### 5. Open dashboards
@@ -289,7 +307,7 @@ python pipelines/flows.py --flow retrain                 # retrain only
 ```bash
 docker-compose up --build
 # Then run the pipeline on the latest real batch:
-docker exec retraining_pipeline python pipelines/flows.py --flow full
+docker exec retraining_pipeline python -m pipelines.flows --flow full
 ```
 
 ### 7. Configure optional integrations
@@ -354,6 +372,17 @@ The Space's public URL is `https://<user>-<space>.hf.space` (here, `https://shiv
 
 **"How do you know when to retrain?"**
 Three signals: KS test per feature (non-parametric distributional test), PSI per feature (Basel II regulatory standard), and PSI on model prediction scores. Any two KS-drifted features OR any PSI-critical feature → retrain triggered automatically.
+
+**Measured honestly, that trigger fires on 36 of 36 committed batches — 100%**, so
+on this dataset it is equivalent to retraining unconditionally. The cause is not
+the threshold: the reference frame is the earliest 12 months (2015) and never
+moves, so by 2018 the trigger is asking "does this month differ from 2015?", to
+which the answer is yes and increasingly so. An effect-size floor does not help
+(KS with *D* ≥ 0.05 still fires 36/36); PSI-critical fires 26/36. A retraining
+trigger has to compare against the **current champion's training distribution**,
+not a frozen baseline nobody is serving. See [RESULTS.md §5](RESULTS.md) for the
+full sweep and `python scripts/trigger_sweep.py` to reproduce it. This is a known
+open design issue, not a solved one.
 
 **"Why do drift monitoring and retraining look at different batches?"**
 Because they have opposite data needs, and conflating them is a classic label-leakage trap. Drift detection is *unsupervised* — it compares feature distributions and needs no labels, so it monitors the **newest** batch (the freshest picture of incoming applicants). Retraining is *supervised* — it needs *observed* outcomes, and recent loans haven't had time to default yet, so a fresh batch shows an artificially deflated ~1–5% default rate versus the ~20% a batch settles at once mature. Training on that immature tail teaches the model defaults are rarer than they are, biasing it to under-predict risk — the dangerous direction for credit. So `--flow full` **decouples** the two: drift runs on the latest calendar batch, while retraining selects and trains only on batches whose positive rate clears a label-maturity floor (`MATURE_POS_RATE_FLOOR = 0.10` in `pipelines/flows.py`). This floor sits deliberately above the ingest DQ gate's 2% degenerate-class floor: the DQ gate rejects *corrupt* all-one-class data; the maturity floor rejects *incomplete* labels.

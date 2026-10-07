@@ -9,7 +9,12 @@ Why Prefect over Airflow?
   Prefect: Flow-first. A Prefect flow is just a Python function decorated
            with @flow. Tasks are @task-decorated functions. No XML, no
            separate graph definition. The flow IS the code.
-           Local execution: `python pipelines/flows.py` — just works.
+           Local execution: `python -m pipelines.flows`. Run it as a module,
+           not as `python pipelines/flows.py` — the path form puts pipelines/
+           on sys.path instead of the repo root, so the absolute imports below
+           fail with ModuleNotFoundError: No module named 'alerting'. (Inside
+           the Docker images the path form happens to work, because they set
+           PYTHONPATH=/app; nothing sets it for you locally.)
            Server: `prefect server start` — single command, SQLite backend.
 
   Both are production-grade. Prefect 2 (Orion) is the modern choice for

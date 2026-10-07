@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 import yaml
 
@@ -117,6 +117,11 @@ class TrainingConfig:
     random_state: int
     optuna: OptunaConfig
     shap: SHAPConfig
+    # Date cutoff for the evaluation holdout. Required in practice on the
+    # promotion path: see training.trainer.reserve_holdout for why a derived
+    # cutoff reintroduces champion/challenger leakage. Optional here only so an
+    # older config file still loads.
+    holdout_cutoff: Optional[str] = None
 
 
 @dataclass
@@ -265,6 +270,7 @@ def _load() -> Settings:
             random_state=tr["random_state"],
             optuna=OptunaConfig(**tr["optuna"]),
             shap=SHAPConfig(**tr["shap"]),
+            holdout_cutoff=tr.get("holdout_cutoff"),
         ),
         validation=ValidationConfig(
             bootstrap=BootstrapConfig(**val["bootstrap"]),

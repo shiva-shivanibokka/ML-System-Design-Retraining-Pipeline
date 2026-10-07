@@ -11,7 +11,7 @@ version: "3.9"
 #   docker-compose up --build
 #
 # Then:
-#   python pipelines/flows.py --flow full  # run full pipeline locally
+#   python -m pipelines.flows --flow full  # run full pipeline locally
 #   open http://localhost:5000             # MLflow UI
 #   open http://localhost:4200             # Prefect UI
 
@@ -88,7 +88,7 @@ services:
       dockerfile: Dockerfile
     container_name: retraining_pipeline
     restart: "no"
-    command: python pipelines/flows.py --flow full
+    command: python -m pipelines.flows --flow full
     environment:
       MLFLOW_TRACKING_URI: http://mlflow:5000
       PREFECT_API_URL: http://prefect:4200/api

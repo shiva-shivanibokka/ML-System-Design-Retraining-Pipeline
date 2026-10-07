@@ -19,4 +19,14 @@ fsspec==2024.6.1
 # Test + lint (Milestone 3)
 pytest==8.2.2
 ruff==0.5.0
-httpx==0.27.0          # FastAPI TestClient dependency (Milestone 4)
+# FastAPI TestClient dependency (Milestone 4).
+# 0.28.1, NOT 0.27.0: google-genai 1.46.0 in requirements.txt requires
+# httpx>=0.28.1, so pinning 0.27.0 here made the two files jointly
+# unsatisfiable -- `pip install -r requirements.txt -r requirements-dev.txt`
+# failed with ResolutionImpossible, i.e. the documented install did not work at
+# all. Verified: all 31 TestClient-backed tests pass on 0.28.1.
+httpx==0.28.1
+# setuptools 81 removed the bundled `pkg_resources` shim, which mlflow 2.14.x
+# still imports at module scope -- without this cap, 14 test modules fail to
+# collect on a fresh install with "No module named 'pkg_resources'".
+setuptools<81

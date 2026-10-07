@@ -125,7 +125,26 @@ training:
     auto_min_rows: 2000              # auto: grow window until this many rows
     auto_max_days: 180               # auto: never use more than 180 days
 
-  test_split: 0.20
+  # Evaluation holdout, reserved BY DATE and pinned here on purpose.
+  #
+  # Every retrain run scores both champion and challenger on loans issued AFTER
+  # this date, and no run ever trains on them. It must be a fixed date, not a
+  # fraction: the pipeline accumulates batches, so a cutoff derived from the data
+  # moves forward each run and the previous run's holdout ends up inside this
+  # run's training set. That is what stopped the promotion gate from ever
+  # promoting: the champion was scored partly in-sample, so its AUC was inflated
+  # and no honest challenger could clear the improvement floor. Measured over all
+  # 35 consecutive run pairs on the committed batches, the challenger's holdout
+  # overlapped the champion's training rows by 19.9% on average (range
+  # 12.7%-36.0%); with this cutoff the overlap is 0.0% for every pair.
+  #
+  # Data spans 2015-01..2018-12. This reserves the last 6 months (2018-07..12),
+  # about 17% of the timeline. Changing it invalidates comparisons against every
+  # model validated under the old value, so treat it as a breaking change.
+  holdout_cutoff: "2018-06-30"
+
+  test_split: 0.20    # retained for the val-split ratio; the TEST set comes from
+                      # holdout_cutoff above, not from this fraction
   val_split: 0.10
   random_state: 42
 
