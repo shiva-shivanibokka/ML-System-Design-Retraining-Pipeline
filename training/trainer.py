@@ -205,13 +205,28 @@ def compute_training_window(df: pd.DataFrame) -> Tuple[pd.DataFrame, int]:
     Selects the most recent data up to ``auto_max_days``, keeping at least
     ``auto_min_rows`` rows.
 
-    **The returned day count always describes the rows actually returned.** It
-    used to be the *requested* window, which made it fiction in the common case:
-    the predicate matched only ``batch_date``, a column no frame in this pipeline
-    carries, so the filter was a no-op, the auto strategy returned on its first
-    iteration, and MLflow recorded a 180-day training window for a model trained
-    on the full multi-year history. Two things are fixed here -- the column it
-    looks for (see ``_WINDOW_DATE_COLUMNS``), and the number it reports.
+    Returns ``(subset, window_days)`` where ``window_days`` is the calendar span
+    of ``subset``, or **None** when the rows carry no usable date at all.
+
+    It used to be the *requested* window, which made it fiction in the common
+    case: the predicate matched only ``batch_date``, a column no frame in this
+    pipeline carries, so the filter was a no-op, the auto strategy returned on its
+    first iteration, and MLflow recorded a 180-day training window for a model
+    trained on the full multi-year history. Two things are fixed here -- the
+    column it looks for (see ``_WINDOW_DATE_COLUMNS``), and the number it reports.
+
+    ``None`` rather than 0 for undateable rows is deliberate. An adversarial
+    review pointed out that returning 0 for a frame of undated rows is the *same
+    category of untruth* as the 180 it replaced: a number unrelated to the data.
+    0 means "these rows span zero days", which is true of a single-date frame and
+    false of an undated one. ``None`` means "unknown", which is what it is.
+
+    **This change is not cost-free, and the cost is not a reporting detail.**
+    Once the predicate actually matches, ``auto_max_days: 180`` becomes binding
+    for the first time. On this repo's data the training frame goes from 247,527
+    rows spanning 2015-2018 (what the pre-fix model card records) to **40,245 rows
+    over 151 days**. That changes the model, and therefore every promotion
+    decision. See RESULTS.md section 4.
 
     The cutoff is anchored on the **latest date present in the data**, not on
     wall-clock now. This dataset is a historical Lending Club snapshot ending in
@@ -222,10 +237,14 @@ def compute_training_window(df: pd.DataFrame) -> Tuple[pd.DataFrame, int]:
     cfg = settings.training.training_window
     date_col = window_date_column(df)
 
-    if date_col is None or len(df) == 0:
-        # Nothing to filter on. Report the honest span (0 when undateable) rather
-        # than the configured maximum.
+    if len(df) == 0:
         return df, 0
+    if date_col is None:
+        # No date column: the rows are real but their span is unknowable.
+        return df, None
+    if pd.to_datetime(df[date_col]).isna().all():
+        # Column present but entirely NaT -- same situation.
+        return df, None
 
     dates = pd.to_datetime(df[date_col])
     anchor = dates.max()
@@ -322,8 +341,26 @@ def reserve_holdout(
     else:
         cutoff_ts = pd.Timestamp(cutoff)
 
+    # NaT compares False against BOTH predicates, so undated rows would land in
+    # neither output and vanish silently -- arbitrary training-data loss that the
+    # caller's only guard (len(test_df) == 0) cannot see. `split_temporal` in
+    # data/build_batches.py already warns about missing issue_d; this function is
+    # on the promotion path and must not be quieter than that.
+    n_missing = int(dates.isna().sum())
+    if n_missing:
+        raise ValueError(
+            f"reserve_holdout: {n_missing} of {len(df)} row(s) have no usable "
+            f"{col!r} value, so they belong to neither the trainable set nor the "
+            "holdout. Refusing to silently drop them -- clean or drop these rows "
+            "upstream, where the decision is visible."
+        )
+
     trainable = df[dates <= cutoff_ts].copy()
     holdout = df[dates > cutoff_ts].copy()
+    # Partition invariant: every input row lands in exactly one side.
+    assert len(trainable) + len(holdout) == len(df), (
+        "reserve_holdout lost rows; this is a partition, not a filter"
+    )
     return trainable, holdout
 
 

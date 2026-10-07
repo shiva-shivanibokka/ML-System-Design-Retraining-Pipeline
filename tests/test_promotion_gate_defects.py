@@ -1,8 +1,15 @@
-"""Reproductions for the four defects that made the promotion gate unable to promote.
+"""Reproductions for the four defects that crippled the promotion gate.
 
-Each test here failed on the commit that introduced it and was confirmed to go red
-again by reverting the corresponding fix. They are grouped in one file because all
-four are symptoms of the same thing: the gate reported numbers nobody could act on.
+**15 of the 16 tests here** were confirmed to go red by reverting the
+corresponding source fix. The exception is
+``test_split_temporal_still_uses_issue_d``, which is a rename guard rather than a
+reproduction and says so in its own docstring. An earlier version of this
+paragraph claimed "each test here" was verified that way, which was false about
+this file's own verification -- in a repo whose subject is unverified
+self-reporting, that is worth fixing rather than glossing.
+
+They are grouped in one file because all four defects are symptoms of the same
+thing: the gate reported numbers nobody could act on.
 
 The four:
   1. ``test_holdout_is_disjoint_from_every_training_window`` — the champion had
@@ -122,7 +129,7 @@ def test_a_derived_cutoff_is_refused_on_the_promotion_path():
     assert holdout["issue_d"].min() > train["issue_d"].max()
 
 
-def test_training_never_silently_falls_back_to_a_random_split():
+def test_reserve_holdout_never_silently_falls_back_to_a_random_split():
     """A frame with no usable date column must raise, not random-split.
 
     Randomly splitting an accumulating frame is the original defect. Failing
@@ -134,6 +141,68 @@ def test_training_never_silently_falls_back_to_a_random_split():
     undated = pd.DataFrame({"loan_amnt": [1.0, 2.0, 3.0], "default": [0, 1, 0]})
     with pytest.raises(ValueError, match="needs a date column"):
         reserve_holdout(undated, cutoff="2018-06-30")
+
+
+def test_the_validation_flow_has_no_random_split_fallback_either():
+    """`flows.py` kept a `train_test_split` fallback for results without a
+    `test_df`, directly contradicting reserve_holdout's refusal one layer down.
+
+    An adversarial review found it: the test above only exercised the function,
+    while the *promotion path* retained exactly the fallback the function
+    forbids. Pinned by source inspection because reaching that branch requires a
+    legacy TrainingResult.
+    """
+    import inspect
+
+    import pipelines.flows as flows
+
+    # Prefect wraps tasks, so read the undecorated function.
+    task_validate = getattr(flows.task_validate, "fn", flows.task_validate)
+    src = inspect.getsource(task_validate)
+    assert "train_test_split" not in src, (
+        "task_validate re-split the accumulated frame when test_df was missing, "
+        "which reintroduces the champion/challenger leakage"
+    )
+    assert "carries no test_df" in src, "it must raise and say why instead"
+
+
+def test_reserve_holdout_is_a_partition_and_loses_no_rows():
+    """NaT compares False against both `<= cutoff` and `> cutoff`, so undated
+    rows landed in NEITHER output and vanished -- silent training-data loss that
+    the caller's only guard (`len(test_df) == 0`) cannot detect."""
+    from training.trainer import reserve_holdout
+
+    mixed = pd.DataFrame(
+        {
+            "issue_d": pd.to_datetime(
+                ["2015-01-01", None, "2016-01-01", None, None]
+            ),
+            "default": [0, 1, 0, 1, 0],
+        }
+    )
+    with pytest.raises(ValueError, match="no usable"):
+        reserve_holdout(mixed, cutoff="2015-06-30")
+
+    # With clean dates it must be a true partition.
+    clean = _frame(300)
+    tr, ho = reserve_holdout(clean, cutoff="2015-06-01")
+    assert len(tr) + len(ho) == len(clean)
+
+
+def test_window_days_is_none_when_the_rows_carry_no_date():
+    """Returning 0 for undated rows is the same category of untruth as the 180
+    it replaced: a number unrelated to the data. None means unknown."""
+    undated = pd.DataFrame({"loan_amnt": [1.0, 2.0, 3.0], "default": [0, 1, 0]})
+    subset, days = compute_training_window(undated)
+    assert len(subset) == 3
+    assert days is None, "0 would claim these three rows span zero days"
+
+    all_nat = pd.DataFrame(
+        {"issue_d": pd.to_datetime([None] * 4), "default": [0, 1, 0, 1]}
+    )
+    subset, days = compute_training_window(all_nat)
+    assert len(subset) == 4
+    assert days is None
 
 
 # ---------------------------------------------------------------------------

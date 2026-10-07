@@ -506,18 +506,22 @@ def task_validate(result, champion_model, df: pd.DataFrame, drift_report: dict):
     # TrainingResult), not a re-derived split. Re-splitting here only matched the
     # trainer while the training-window step was a no-op; once it windows a
     # subset, an independent re-split would overlap the challenger's training
-    # rows and inflate its measured AUC. Fall back to a re-split only for a
-    # legacy result that predates the test_df field.
+    # rows and inflate its measured AUC.
+    #
+    # There is deliberately NO random-split fallback. One used to sit here "for a
+    # legacy result that predates the test_df field", but a random re-split over
+    # the accumulated frame is precisely the leakage `reserve_holdout` exists to
+    # prevent -- a silent fallback to it would reintroduce the defect on exactly
+    # the path that matters, and `trainer.reserve_holdout` refuses to do the same
+    # thing one layer down. A result with no test_df cannot be validated honestly,
+    # so say so instead of inventing a comparison set.
     test_df = getattr(result, "test_df", None)
     if test_df is None:
-        from sklearn.model_selection import train_test_split
-
-        target = settings.dataset.target_column
-        _, test_df = train_test_split(
-            df,
-            test_size=settings.training.test_split,
-            random_state=settings.training.random_state,
-            stratify=df[target],
+        raise ValueError(
+            "TrainingResult carries no test_df, so there is no reserved holdout "
+            "to validate against. Re-splitting here would hand the challenger a "
+            "test set overlapping the champion's training rows (see "
+            "training.trainer.reserve_holdout). Retrain with a current trainer."
         )
 
     validator = ModelValidator()
