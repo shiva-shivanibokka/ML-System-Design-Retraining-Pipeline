@@ -59,7 +59,6 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 
 from configs.logging_config import get_logger
-from configs.paths import utcnow_naive
 from configs.settings import settings
 
 logger = get_logger(__name__)
@@ -176,43 +175,193 @@ def prepare_features(
     return df[feature_cols], label_encoders
 
 
+#: Date columns the window may filter on, in priority order. ``batch_date`` is
+#: the ingestion date and is preferred when present; ``issue_d`` is what
+#: ``data.build_batches`` actually writes into every frame, and is the column the
+#: window used to miss entirely (the batch date lives in the *filename*,
+#: ``batch_2015-03.parquet``, not in a column).
+_WINDOW_DATE_COLUMNS = ("batch_date", "issue_d")
+
+
+def window_date_column(df: pd.DataFrame) -> Optional[str]:
+    """Return the column the training window should filter on, or None."""
+    for col in _WINDOW_DATE_COLUMNS:
+        if col in df.columns:
+            return col
+    return None
+
+
+def _span_days(dates: "pd.Series") -> int:
+    """Calendar days actually covered by ``dates`` (0 for empty/one-day)."""
+    clean = pd.to_datetime(dates).dropna()
+    if clean.empty:
+        return 0
+    return int((clean.max() - clean.min()).days)
+
+
 def compute_training_window(df: pd.DataFrame) -> Tuple[pd.DataFrame, int]:
-    """
-    Parameterized training window (Airbnb / Uber pattern).
-    Selects the most recent data up to auto_max_days,
-    ensuring at least auto_min_rows rows are included.
+    """Parameterized training window (Airbnb / Uber pattern).
+
+    Selects the most recent data up to ``auto_max_days``, keeping at least
+    ``auto_min_rows`` rows.
+
+    Returns ``(subset, window_days)`` where ``window_days`` is the calendar span
+    of ``subset``, or **None** when the rows carry no usable date at all.
+
+    It used to be the *requested* window, which made it fiction in the common
+    case: the predicate matched only ``batch_date``, a column no frame in this
+    pipeline carries, so the filter was a no-op, the auto strategy returned on its
+    first iteration, and MLflow recorded a 180-day training window for a model
+    trained on the full multi-year history. Two things are fixed here -- the
+    column it looks for (see ``_WINDOW_DATE_COLUMNS``), and the number it reports.
+
+    ``None`` rather than 0 for undateable rows is deliberate. An adversarial
+    review pointed out that returning 0 for a frame of undated rows is the *same
+    category of untruth* as the 180 it replaced: a number unrelated to the data.
+    0 means "these rows span zero days", which is true of a single-date frame and
+    false of an undated one. ``None`` means "unknown", which is what it is.
+
+    **This change is not cost-free, and the cost is not a reporting detail.**
+    Once the predicate actually matches, ``auto_max_days: 180`` becomes binding
+    for the first time. On this repo's data the training frame goes from 247,527
+    rows spanning 2015-2018 (what the pre-fix model card records) to **40,245 rows
+    over 151 days**. That changes the model, and therefore every promotion
+    decision. See RESULTS.md section 4.
+
+    The cutoff is anchored on the **latest date present in the data**, not on
+    wall-clock now. This dataset is a historical Lending Club snapshot ending in
+    2018, so a wall-clock anchor puts every cutoff years in the future and selects
+    the empty set. Anchoring on the data makes "the most recent N days" mean the
+    most recent N days *of the data*, which is what a retraining window is for.
     """
     cfg = settings.training.training_window
+    date_col = window_date_column(df)
+
+    if len(df) == 0:
+        return df, 0
+    if date_col is None:
+        # No date column: the rows are real but their span is unknowable.
+        return df, None
+    if pd.to_datetime(df[date_col]).isna().all():
+        # Column present but entirely NaT -- same situation.
+        return df, None
+
+    dates = pd.to_datetime(df[date_col])
+    anchor = dates.max()
+
+    def _subset(n_days: int) -> pd.DataFrame:
+        return df[dates >= anchor - timedelta(days=n_days)]
 
     if cfg.strategy == "fixed":
-        cutoff = utcnow_naive() - timedelta(days=cfg.fixed_days)
-        if "batch_date" in df.columns:
-            mask = pd.to_datetime(df["batch_date"]) >= cutoff
-            subset = df[mask]
-        else:
-            subset = df
-        return subset, cfg.fixed_days
+        subset = _subset(cfg.fixed_days)
+        return subset, _span_days(subset[date_col])
 
-    # Auto strategy: start from max_days and shrink until we have enough rows
+    # Auto strategy: start from max_days and shrink until we have enough rows.
     for n_days in range(cfg.auto_max_days, 1, -1):
-        cutoff = utcnow_naive() - timedelta(days=n_days)
-        if "batch_date" in df.columns:
-            mask = pd.to_datetime(df["batch_date"]) >= cutoff
-            subset = df[mask]
-        else:
-            subset = df
+        subset = _subset(n_days)
         if len(subset) >= cfg.auto_min_rows:
-            return subset, n_days
+            return subset, _span_days(subset[date_col])
 
-    # Fallback: no window met auto_min_rows — use all available data. Report the
-    # actual data span in DAYS (never a row count) so MLflow/model-card lineage
-    # stays honest.
-    if "batch_date" in df.columns and len(df) > 0:
-        _dates = pd.to_datetime(df["batch_date"])
-        window_days = int((_dates.max() - _dates.min()).days) or cfg.auto_max_days
+    # No window met auto_min_rows — use all available data and report its span.
+    return df, _span_days(df[date_col])
+
+
+# ---------------------------------------------------------------------------
+# Evaluation holdout
+# ---------------------------------------------------------------------------
+
+#: Fraction of the *date range* (not the rows) reserved for evaluation when a
+#: caller explicitly opts into a floating cutoff. Only safe for one-off analysis
+#: -- see ``reserve_holdout``.
+HOLDOUT_TAIL_FRACTION = 0.20
+
+
+def reserve_holdout(
+    df: pd.DataFrame,
+    cutoff: Optional[str | pd.Timestamp] = None,
+    date_col: Optional[str] = None,
+    allow_floating_cutoff: bool = False,
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """Split ``df`` into (trainable, holdout) at a **date** cutoff.
+
+    Why this exists, and why a random split cannot replace it: the pipeline
+    *accumulates* batches, so run N trains on a superset of run N-1's rows. A
+    random ``train_test_split`` over that growing frame hands run N a holdout
+    containing rows that were in run N-1's *training* set -- and run N-1's model
+    is the champion. The champion was therefore scored partly in-sample on the
+    very set used to compare it against the challenger, inflating its AUC, and
+    ``challenger_auc - champion_auc >= min_improvement`` could not be met by an
+    honest challenger.
+
+    Measured on this repo's 36 committed batches, over all 35 consecutive
+    (champion, challenger) run pairs: the challenger's holdout overlapped the
+    champion's training rows by **19.9% on average** (median 18.1%, range
+    12.7%-36.0%). After this change the overlap is **0.0% for every pair** --
+    exactly zero, not merely small, because the boundary is a date rather than a
+    sample. Reproduce with ``scripts/measure_leakage.py``.
+
+    A date cutoff is disjoint from every training window by construction --
+    including windows that do not exist yet -- so it stays valid as data arrives.
+    It also makes promotion a question about the *future*, which is the question
+    anyone actually cares about, rather than about a random corner of the past.
+
+    ``cutoff`` is **required**, and deliberately so. A cutoff derived from the
+    data (e.g. "the last 20% of the range") floats forward as batches accumulate,
+    so run N's *training* set swallows run N-1's holdout and the leakage returns
+    wearing a different hat -- the first version of this fix had exactly that bug,
+    and ``test_holdout_is_disjoint_from_every_training_window`` caught it. A
+    floating boundary also means two runs are graded on different exams, so their
+    AUCs are not comparable even when neither leaks.
+
+    ``allow_floating_cutoff=True`` opts into the tail heuristic for one-off
+    analysis. Never use it on the promotion path.
+    """
+    col = date_col or window_date_column(df)
+    if col is None:
+        raise ValueError(
+            "reserve_holdout needs a date column (one of "
+            f"{_WINDOW_DATE_COLUMNS}); got columns {list(df.columns)}. "
+            "A random split is not an acceptable fallback here -- see this "
+            "function's docstring for what it silently breaks."
+        )
+
+    dates = pd.to_datetime(df[col])
+    if cutoff is None:
+        if not allow_floating_cutoff:
+            raise ValueError(
+                "reserve_holdout requires an explicit `cutoff` date. A cutoff "
+                "computed from the data moves as new batches arrive, which puts "
+                "the previous run's holdout into this run's training set -- the "
+                "exact leakage this function exists to prevent. Set "
+                "training.holdout_cutoff in configs/config.yaml, or pass "
+                "allow_floating_cutoff=True for one-off analysis only."
+            )
+        lo, hi = dates.min(), dates.max()
+        cutoff_ts = lo + (hi - lo) * (1.0 - HOLDOUT_TAIL_FRACTION)
     else:
-        window_days = cfg.auto_max_days
-    return df, window_days
+        cutoff_ts = pd.Timestamp(cutoff)
+
+    # NaT compares False against BOTH predicates, so undated rows would land in
+    # neither output and vanish silently -- arbitrary training-data loss that the
+    # caller's only guard (len(test_df) == 0) cannot see. `split_temporal` in
+    # data/build_batches.py already warns about missing issue_d; this function is
+    # on the promotion path and must not be quieter than that.
+    n_missing = int(dates.isna().sum())
+    if n_missing:
+        raise ValueError(
+            f"reserve_holdout: {n_missing} of {len(df)} row(s) have no usable "
+            f"{col!r} value, so they belong to neither the trainable set nor the "
+            "holdout. Refusing to silently drop them -- clean or drop these rows "
+            "upstream, where the decision is visible."
+        )
+
+    trainable = df[dates <= cutoff_ts].copy()
+    holdout = df[dates > cutoff_ts].copy()
+    # Partition invariant: every input row lands in exactly one side.
+    assert len(trainable) + len(holdout) == len(df), (
+        "reserve_holdout lost rows; this is a partition, not a filter"
+    )
+    return trainable, holdout
 
 
 # ---------------------------------------------------------------------------
@@ -363,27 +512,43 @@ class CreditRiskTrainer:
         ) as run:
             run_id = run.info.run_id
 
-            # 1. Parameterized training window
-            train_df, window_days = compute_training_window(df)
+            # 1. Reserve the evaluation holdout BY DATE, before anything else
+            # touches the frame. This is the set the promotion gate scores both
+            # champion and challenger on, and no run may ever train on it --
+            # see reserve_holdout() for what a random split broke here.
+            holdout_cutoff = getattr(self.cfg, "holdout_cutoff", None)
+            trainable_df, test_df = reserve_holdout(df, cutoff=holdout_cutoff)
+            if len(test_df) == 0:
+                raise ValueError(
+                    "reserve_holdout produced an empty holdout — refusing to "
+                    "train a model the promotion gate cannot evaluate."
+                )
+            logger.info(
+                "Holdout reserved by date: %s rows held out, %s trainable",
+                f"{len(test_df):,}",
+                f"{len(trainable_df):,}",
+            )
+
+            # 2. Parameterized training window, applied only to trainable rows.
+            train_df, window_days = compute_training_window(trainable_df)
             logger.info("Training window: %s days | rows: %s", window_days, f"{len(train_df):,}")
             mlflow.log_param("training_window_days", window_days)
             mlflow.log_param("n_training_rows", len(train_df))
-
-            # 2. Train/val/test split — split RAW rows FIRST so encoders never
-            # see val/test categories (avoids category leakage).
-            target = self.dataset_cfg.target_column
-            trainval_df, test_df = train_test_split(
-                train_df,
-                test_size=self.cfg.test_split,
-                random_state=self.cfg.random_state,
-                stratify=train_df[target],
+            mlflow.log_param("n_holdout_rows", len(test_df))
+            mlflow.log_param(
+                "holdout_cutoff", str(holdout_cutoff) if holdout_cutoff else "auto-tail"
             )
+
+            # 3. Train/val split — split RAW rows FIRST so encoders never see
+            # val categories (avoids category leakage). The test set is NOT drawn
+            # here; it was reserved by date in step 1.
+            target = self.dataset_cfg.target_column
             val_frac = self.cfg.val_split / (1 - self.cfg.test_split)
             train_split_df, val_df = train_test_split(
-                trainval_df,
+                train_df,
                 test_size=val_frac,
                 random_state=self.cfg.random_state,
-                stratify=trainval_df[target],
+                stratify=train_df[target],
             )
 
             y_train = train_split_df[target].values.astype(int)

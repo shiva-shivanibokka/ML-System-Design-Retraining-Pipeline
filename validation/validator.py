@@ -108,6 +108,32 @@ class SliceResult:
     delta_auc: float
     passed: bool  # delta >= -max_degradation
 
+    def to_json_safe(self) -> dict:
+        """Return this slice as JSON-native Python scalars.
+
+        Needed because the AUCs come out of scikit-learn as ``numpy.float64`` and
+        ``passed`` is therefore a ``numpy.bool_``, which ``json.dump`` cannot
+        serialise. The model card is written with ``default=str``, so instead of
+        raising, ``numpy.bool_(True)`` was silently written as the **string**
+        ``"True"``. The frontend tests ``passed === true`` for PASS and
+        ``passed === false`` for FAIL, and a string satisfies neither -- so every
+        cohort rendered as a neutral dash and the live fairness page showed
+        0 PASS, 0 FAIL and 42 neutral rows.
+
+        ``default=str`` is a trap in general: it turns a serialisation *error*
+        into silently wrong data. Converting here is the fix; the ``default`` hook
+        stays only as a backstop for genuinely unexpected types.
+        """
+        return {
+            "slice_name": str(self.slice_name),
+            "cohort_value": str(self.cohort_value),
+            "n_samples": int(self.n_samples),
+            "champion_auc": float(self.champion_auc),
+            "challenger_auc": float(self.challenger_auc),
+            "delta_auc": float(self.delta_auc),
+            "passed": bool(self.passed),
+        }
+
 
 @dataclass
 class ValidationDecision:
@@ -398,7 +424,7 @@ class ModelValidator:
         alpha = 1 - cfg.confidence_level
         delta_p5 = float(np.percentile(delta_arr, alpha * 100))
         delta_p95 = float(np.percentile(delta_arr, (1 - alpha) * 100))
-        passed = delta_p5 > 0
+        message, passed = self.describe_delta_interval(delta_p5, delta_p95)
 
         return BootstrapResult(
             champion_auc_mean=round(float(np.mean(champion_aucs)), 4),
@@ -408,11 +434,32 @@ class ModelValidator:
             delta_p95=round(delta_p95, 4),
             n_bootstrap=len(deltas),
             passed=passed,
-            message=(
-                f"Bootstrap CI [{delta_p5:.4f}, {delta_p95:.4f}] "
-                f"{'excludes 0 → challenger better' if passed else 'includes 0 → not conclusive'}"
-            ),
+            message=message,
         )
+
+    @staticmethod
+    def describe_delta_interval(delta_p5: float, delta_p95: float) -> tuple[str, bool]:
+        """Describe a CI of (challenger AUC - champion AUC); return (message, passed).
+
+        There are **three** outcomes, not two. The old wording collapsed the two
+        conclusive ones into the inconclusive label: it printed
+        ``includes 0 → not conclusive`` whenever ``delta_p5 <= 0``, so an interval
+        like ``[-0.0120, -0.0089]`` -- which excludes 0 entirely and says plainly
+        that the challenger is *worse* -- was reported as inconclusive. That
+        sentence went out on the live dashboard, where it reads as though the
+        pipeline cannot tell the difference between "no evidence" and "evidence of
+        harm". It can; only the string was wrong.
+
+        ``passed`` is unchanged in meaning (promote only when the interval lies
+        entirely above 0) and is returned as a real ``bool`` so both branches of
+        the frontend's ``=== true`` / ``=== false`` check can resolve.
+        """
+        bounds = f"Bootstrap CI [{delta_p5:.4f}, {delta_p95:.4f}]"
+        if delta_p5 > 0:
+            return f"{bounds} excludes 0 → challenger better", True
+        if delta_p95 < 0:
+            return f"{bounds} excludes 0 → challenger worse", False
+        return f"{bounds} includes 0 → not conclusive", False
 
     # -----------------------------------------------------------------------
     # Gate 2: Slice validation
@@ -468,7 +515,10 @@ class ModelValidator:
                 chall_auc = roc_auc_score(y_slice, challenger_probs[mask])
                 champ_auc = roc_auc_score(y_slice, champion_probs[mask])
                 delta = chall_auc - champ_auc
-                passed = delta >= -max_degrade
+                # bool(...) is load-bearing: scikit-learn returns numpy.float64,
+                # so this comparison yields numpy.bool_, which json.dump cannot
+                # serialise and `default=str` turned into the string "True".
+                passed = bool(delta >= -max_degrade)
 
                 results.append(
                     SliceResult(
@@ -526,13 +576,15 @@ class ModelValidator:
             "feature_importance_top10": dict(
                 list(result.feature_importance.items())[:10]
             ),
+            # to_json_safe() rather than reading the fields directly: `passed` is
+            # a numpy.bool_ off a numpy comparison, and the `default=str` hook on
+            # the json.dump below writes those as the string "True" instead of
+            # failing, which is what emptied the live fairness page.
             "slice_metrics": {
                 f"{r.slice_name}={r.cohort_value}": {
-                    "n_samples": r.n_samples,
-                    "challenger_auc": r.challenger_auc,
-                    "champion_auc": r.champion_auc,
-                    "delta_auc": r.delta_auc,
-                    "passed": r.passed,
+                    k: v
+                    for k, v in r.to_json_safe().items()
+                    if k not in ("slice_name", "cohort_value")
                 }
                 for r in decision.slice_results
             },

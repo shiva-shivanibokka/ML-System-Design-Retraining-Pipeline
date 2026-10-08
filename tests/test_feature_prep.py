@@ -49,7 +49,24 @@ def test_prepare_features_handles_unseen_category():
 
 
 def test_training_window_returns_reasonable_subset():
+    """`canonical_frame` has no date column, so the span of its rows is unknown.
+
+    This used to assert `isinstance(days, int)`, which passed because the
+    function returned 0 for undated rows. 0 is not "unknown" -- it is the claim
+    that these 50 rows span zero days, which is false, and it is the same
+    category of untruth as the 180 the function used to report for a model
+    trained on four years of history. The contract is now `None` for undated
+    input; see training.trainer.compute_training_window.
+    """
     df = canonical_frame(n=50, seed=1)
     subset, days = compute_training_window(df)
     assert len(subset) <= len(df) and len(subset) > 0
-    assert isinstance(days, int)
+    assert days is None, "an undated frame has no knowable window length"
+
+    # With dates present it must be a real, honest span.
+    dated = df.copy()
+    dated["issue_d"] = pd.date_range("2018-01-01", periods=len(dated), freq="D")
+    subset, days = compute_training_window(dated)
+    assert isinstance(days, int) and days >= 0
+    kept = subset["issue_d"]
+    assert days == int((kept.max() - kept.min()).days)

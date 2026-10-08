@@ -1,6 +1,11 @@
 FROM python:3.11-slim
 
-RUN apt-get update && apt-get install -y --no-install-recommends curl && \
+# libgomp1: LightGBM's native library links against the GNU OpenMP runtime,
+# which python:*-slim does not ship. Without it `import lightgbm` raises
+# "libgomp.so.1: cannot open shared object file" -- so every training and
+# validation entrypoint in this image failed at import, not at run time.
+# serving/Dockerfile already installed it; this one did not.
+RUN apt-get update && apt-get install -y --no-install-recommends curl libgomp1 && \
     rm -rf /var/lib/apt/lists/*
 
 RUN useradd --create-home --shell /bin/bash app

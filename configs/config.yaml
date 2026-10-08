@@ -125,7 +125,39 @@ training:
     auto_min_rows: 2000              # auto: grow window until this many rows
     auto_max_days: 180               # auto: never use more than 180 days
 
-  test_split: 0.20
+  # Evaluation holdout, reserved BY DATE and pinned here on purpose.
+  #
+  # Every retrain run scores both champion and challenger on loans issued AFTER
+  # this date, and no run ever trains on them. It must be a fixed date, not a
+  # fraction: the pipeline accumulates batches, so a cutoff derived from the data
+  # moves forward each run and the previous run's holdout ends up inside this
+  # run's training set, so the champion gets scored partly in-sample and its AUC
+  # is inflated. Measured over the 30 consecutive run pairs the pipeline actually
+  # produces: the challenger's holdout overlapped the champion's training rows by
+  # 26.1% on average (range 15.0%-45.1%), and on the LOWEST-leakage pair that
+  # inflated the champion's AUC by +0.0181 -- 3.6x the +0.005 improvement floor a
+  # challenger must clear. Reproduce: scripts/measure_leakage.py and
+  # scripts/measure_champion_inflation.py.
+  #
+  # WARNING -- what this cutoff actually reserves on the real data path.
+  # The raw data spans 2015-01..2018-12, but the training frame does not:
+  # pipelines.flows._load_all_processed_data loads processed batches only (2015
+  # is the reference frame, never in data/processed/) and drops batches below
+  # MATURE_POS_RATE_FLOOR. So this cutoff reserves ONE month -- 2018-07, 4,302
+  # rows, 1.82% of the frame -- and it is the least label-mature month that
+  # cleared the floor (12.3% default rate vs 22.6% for the trainable set).
+  # That is correct but weak: the bootstrap CI over 4,302 rows is much wider than
+  # over the ~49k the old random split used, so this may make the gate HARDER to
+  # clear. An earlier comment here claimed "the last 6 months, about 17% of the
+  # timeline", which is true of the raw date range and false of what is trained
+  # on. See RESULTS.md section 1; moving the cutoff earlier is the likely fix.
+  #
+  # Changing this invalidates comparisons against every model validated under the
+  # old value, so treat it as a breaking change.
+  holdout_cutoff: "2018-06-30"
+
+  test_split: 0.20    # retained for the val-split ratio; the TEST set comes from
+                      # holdout_cutoff above, not from this fraction
   val_split: 0.10
   random_state: 42
 
