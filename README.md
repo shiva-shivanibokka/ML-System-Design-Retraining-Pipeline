@@ -236,7 +236,7 @@ The same work above, mapped to the competencies it exercises:
 | **Modern web frontend** | Next.js 14 (App Router, TypeScript) dashboard on Vercel — a pure API client built with server components |
 | **Containerization & Docker** | Dockerfile + docker-compose for the full local stack; Docker-based Hugging Face Space for serving |
 | **System design & architecture** | Documented tradeoff reasoning throughout (KS vs PSI, bootstrap vs t-test, drift/retrain label-maturity decoupling) |
-| **Automated testing** | 96 tests covering flows, promotion gates, drift, batch selection, and the serving API |
+| **Automated testing** | 130 tests covering flows, promotion gates, drift, batch selection, and the serving API |
 
 ---
 
