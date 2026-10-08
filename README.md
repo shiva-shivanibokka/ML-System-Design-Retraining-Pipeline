@@ -374,15 +374,32 @@ The Space's public URL is `https://<user>-<space>.hf.space` (here, `https://shiv
 Three signals: KS test per feature (non-parametric distributional test), PSI per feature (Basel II regulatory standard), and PSI on model prediction scores. Any two KS-drifted features OR any PSI-critical feature → retrain triggered automatically.
 
 **Measured honestly, that trigger fires on 36 of 36 committed batches — 100%**, so
-on this dataset it is equivalent to retraining unconditionally. The cause is not
-the threshold: the reference frame is the earliest 12 months (2015) and never
-moves, so by 2018 the trigger is asking "does this month differ from 2015?", to
-which the answer is yes and increasingly so. An effect-size floor does not help
-(KS with *D* ≥ 0.05 still fires 36/36); PSI-critical fires 26/36. A retraining
-trigger has to compare against the **current champion's training distribution**,
-not a frozen baseline nobody is serving. See [RESULTS.md §5](RESULTS.md) for the
-full sweep and `python scripts/trigger_sweep.py` to reproduce it. This is a known
-open design issue, not a solved one.
+on this dataset it is equivalent to retraining unconditionally.
+
+**The cause is the test, not the reference frame — and that correction is itself
+measured.** An earlier version of this paragraph blamed the frozen 2015 reference
+and concluded that a trigger "has to compare against the current champion's
+training distribution". Rebuilding the reference as a rolling 12-month window and
+re-running the same sweep (`python scripts/rolling_reference_sweep.py`) shows the
+shipped rule **still fires 36/36**. The rate comes from counting KS *significance*
+with no effect-size floor: at 8,000 current rows against ~96,000 reference rows,
+KS is significant on 4–11 of 11 features whatever it is compared against. A test
+that sensitive is a sample-size detector.
+
+The rolling reference does fix the drift *magnitude* — `max_D` stops trending
+(0.115 → 0.299 fixed, versus a flat 0.06–0.19 rolling) — and that is what makes an
+effect-size floor usable. The two together are the fix, and neither is alone:
+
+| trigger rule | fixed 2015 ref | rolling 12-month ref |
+|---|---|---|
+| As shipped: KS-significant count ≥ 2 | 100.0% | **100.0%** |
+| KS-significant and *D* ≥ 0.10, count ≥ 2 | 63.9% | **5.6%** |
+
+No threshold here has been retuned, because the right firing rate is a decision
+about retraining cost rather than a number to pick for looking good. See
+[RESULTS.md §5](RESULTS.md) for the original sweep and **§5a** for the rolling
+comparison. This is still an open design decision — but an informed one now,
+rather than a single 100% number.
 
 **"Why do drift monitoring and retraining look at different batches?"**
 Because they have opposite data needs, and conflating them is a classic label-leakage trap. Drift detection is *unsupervised* — it compares feature distributions and needs no labels, so it monitors the **newest** batch (the freshest picture of incoming applicants). Retraining is *supervised* — it needs *observed* outcomes, and recent loans haven't had time to default yet, so a fresh batch shows an artificially deflated ~1–5% default rate versus the ~20% a batch settles at once mature. Training on that immature tail teaches the model defaults are rarer than they are, biasing it to under-predict risk — the dangerous direction for credit. So `--flow full` **decouples** the two: drift runs on the latest calendar batch, while retraining selects and trains only on batches whose positive rate clears a label-maturity floor (`MATURE_POS_RATE_FLOOR = 0.10` in `pipelines/flows.py`). This floor sits deliberately above the ingest DQ gate's 2% degenerate-class floor: the DQ gate rejects *corrupt* all-one-class data; the maturity floor rejects *incomplete* labels.

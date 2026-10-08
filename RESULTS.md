@@ -268,7 +268,10 @@ fix the rate:
 
 `python scripts/trigger_sweep.py`.
 
-**The likely dominant cause is the reference set.** The reference frame is the
+**The likely dominant cause is the reference set.** *(Measured in §5a, and this
+turned out to be half right: the reference set drives drift **magnitude** and the
+rising trend, but it does **not** explain the 100% firing rate. Read §5a with this
+paragraph.)* The reference frame is the
 earliest 12 months (2015-01…2015-12, 96,000 rows) and never moves, so by 2018 the
 pipeline is asking "does this month differ from 2015?" — and the answer is yes,
 increasingly. Drift magnitude **rises with a clear trend** across the series,
@@ -305,6 +308,67 @@ most months, which is not meaningfully different from a schedule.
 but a change to what the reference set *is*, which alters the pipeline's
 architecture and retraining cost. That belongs to the repo's owner. Picking a
 number that produced a pleasing firing rate would be result-shopping.
+
+---
+
+## 5a. The rolling reference, measured - it fixes the magnitude, not the rate
+
+§5 named the fixed 2015 reference as the leading hypothesis for the 100% firing
+rate and declined to retune a threshold, on the grounds that picking a number for
+its firing rate is result-shopping. That objection still stands. What was missing
+was the measurement, so here it is.
+
+`python scripts/rolling_reference_sweep.py` rebuilds the reference for each batch
+as the **12 months immediately before it**, pooled from the 2015 reference frame
+and the earlier batches, then runs the same detector, the same thresholds and the
+same four rules as `scripts/trigger_sweep.py`. One thing changes: the reference
+window. Every batch has a full 12 months behind it, asserted in the script rather
+than assumed.
+
+| trigger rule | fixed 2015 ref | **rolling 12-month ref** |
+|---|---|---|
+| **As shipped:** KS-significant count ≥ 2 | 36/36 — 100.0% | **36/36 — 100.0%** |
+| KS-significant **and** *D* ≥ 0.05, count ≥ 2 | 36/36 — 100.0% | 23/36 — 63.9% |
+| PSI critical in ≥ 1 feature | 26/36 — 72.2% | 14/36 — 38.9% |
+| KS-significant **and** *D* ≥ 0.10, count ≥ 2 | 23/36 — 63.9% | **2/36 — 5.6%** |
+
+**Three things follow, and the first one corrects §5.**
+
+**The reference set is not the cause of the firing rate.** The shipped rule fires
+on 36 of 36 batches against a rolling reference too. §5 called the fixed reference
+"the likely dominant cause"; for the *rate*, that is now disproved. The cause of
+the rate is that the shipped rule counts KS **significance** and applies no
+effect-size floor - and at 8,000 current rows against ~96,000 reference rows, KS
+is significant on 4 to 11 of the 11 features no matter what it is compared
+against. A test that sensitive is a sample-size detector.
+
+**The reference set does drive the magnitude, and the trend.** Against the fixed
+reference, `max_D` climbed 0.115 → 0.187 → 0.228 → 0.299 across 2016-2018. Against
+a rolling one it stays in roughly 0.06-0.19 for the whole series with no trend. So
+§5's reading of *why drift appeared to grow* holds: by 2018 the pipeline was
+measuring the distance from 2015, and that distance grows. It is the rate, not the
+magnitude, that the reference set fails to explain.
+
+**Together they make an effect-size floor usable, which neither does alone.**
+*D* ≥ 0.10 against the fixed reference still fires 63.9% - most months, little
+better than a schedule. The same floor against a rolling reference fires **5.6%,
+2 of 36**. That is a conditional trigger. Note this is the combination: the floor
+needs the rolling reference to be discriminating, and the rolling reference needs
+the floor to change the rate at all.
+
+**What this does and does not license.** It is evidence for the architectural
+change §5 described, measured rather than argued, and it says that change is not
+sufficient on its own. It is still one dataset, and it does not separate the
+second mechanism §5 raised - the later batches are increasingly label-censored
+(2018-12 is 1,243 rows at a 1.05% default rate), and a rolling reference does not
+control for composition shift. The flat `max_D` series is consistent with
+censorship not dominating the feature distributions, but that is an observation,
+not a test.
+
+**Still not retuning the shipped threshold.** 2/36 is not offered as the right
+firing rate, because the right rate is a decision about retraining cost that
+belongs to whoever pays for it. What has changed is that the decision can now be
+made against measured alternatives instead of a single 100% number.
 
 ---
 
@@ -446,9 +510,15 @@ artefacts.
   correct but weak. An earlier, fully-matured cutoff is the likely answer.
 - **The 180-day training window is now binding** (§4) and nobody chose it.
 - **The drift reference set** (§5) is an architectural decision, not a threshold.
+  Now measured in §5a: a rolling 12-month reference removes the drift *trend* and
+  makes an effect-size floor discriminating (5.6% vs 63.9%), but does not by itself
+  change the shipped rule's 100% rate. The decision is still the owner's; it is no
+  longer uninformed.
 - **The live dashboard still shows the old strings** for cards generated before
   these fixes; the card is a stored artifact and a fresh run regenerates it.
 - **`prediction_psi` was `None`** throughout the sweep because no prediction
   scores were passed; whether the deployed flow populates it is unverified.
-- **`scripts/measure_drift_rate.py` prints an always-empty `max_psi` column** —
-  `DriftReport.to_dict()` has no such key.
+- ~~**`scripts/measure_drift_rate.py` prints an always-empty `max_psi` column**~~ —
+  fixed 8 Oct 2026. `DriftReport.to_dict()` has no such key, so `.get("max_psi")`
+  returned `None` for all 36 batches and the table showed a blank where a number was
+  implied. It is now computed from `feature_results`, where the PSI scores live.

@@ -34,7 +34,14 @@ def main() -> int:
                 "batch": label,
                 "n": len(cur),
                 "ks_drifted": d.get("n_features_ks_drifted"),
-                "max_psi": d.get("max_psi"),
+                # `d.get("max_psi")` printed an always-empty column: DriftReport
+                # .to_dict() has no "max_psi" key, so .get() returned None for
+                # all 36 batches and the table showed a blank where a number
+                # was implied. Computed from the per-feature results instead,
+                # which is where the PSI scores actually are.
+                "max_psi": round(max(f.psi_score for f in rep.feature_results), 4)
+                if rep.feature_results
+                else None,
                 "pred_psi": d.get("prediction_psi"),
                 "triggered": d.get("retrain_triggered"),
             }
